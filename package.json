@@ -1,0 +1,28 @@
+{
+  "name": "vinci-app",
+  "version": "1.0.0",
+  "description": "API de Vinci",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon index.js",
+    "dev": "nodemon index.js",
+    "seed:degrees": "node scripts/seedDegrees.js",
+    "sync:posts": "node scripts/syncPostCounter.js",
+     "sync:comments": "node scripts/syncCommentCounter.js",
+     "sync:users": "node scripts/syncUserCounter.js"
+  },
+  "author": "Camila Galindez",
+  "license": "ISC",
+  "dependencies": {
+    "bad-words": "^4.0.0",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "leo-profanity": "^1.7.0",
+    "mongoose": "^8.15.0",
+    "nodemon": "^3.1.10"
+  }
+}
