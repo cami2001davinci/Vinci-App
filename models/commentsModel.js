@@ -26,11 +26,10 @@ const commentSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  commentNumber: {
-  type: Number,
-  unique: true,
-  required: true
-},
+  likedBy: [{
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'User'
+}],
 
 }, {
   timestamps: true

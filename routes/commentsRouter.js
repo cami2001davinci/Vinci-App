@@ -5,7 +5,8 @@ import {
   updateComment,
   getCommentsByUser,
   getCommentsByPost,
-  deleteComment
+  deleteComment,
+  toggleLikeOnComment
 } from '../controllers/commentsController.js';
 import { protect } from '../Middleware/auth.js';
 
@@ -21,10 +22,13 @@ router.get('/mine', protect, getCommentsByUser);
   router.get('/post/:postId', getCommentsByPost);
 
 // Editar comentario por id (requiere login)
-router.put('/:commentNumber', protect, updateComment);
+router.put('/:commentId', protect, updateComment);
 
 
 // Eliminar comentario propio
-router.delete('/:commentNumber', protect, deleteComment);
+router.delete('/:commentId', protect, deleteComment);
+
+router.put('/:commentId/like', protect, toggleLikeOnComment);
+
 
 export default router;

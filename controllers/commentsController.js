@@ -1,39 +1,27 @@
 // controllers/commentController.js
-import Counter from '../models/counterModel.js';
 import Comment from '../models/commentsModel.js';
 import Post from '../models/postsModel.js';  // <-- Importar el modelo Post
 import User from '../models/usersModel.js';
 
 
-async function getNextSequence(name) {
-  const counter = await Counter.findOneAndUpdate(
-    { name },
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true }
-  );
-  return counter.seq;
-}
 
 // Crear nuevo comentario
 export const createComment = async (req, res) => {
   try {
-    const { postNumber, content } = req.body;
+    const { postId, content } = req.body;
 
-    if (!postNumber) {
-      return res.status(400).json({ message: 'El número del post es obligatorio' });
-    }
+   if (!postId || !content) {
+  return res.status(400).json({ message: 'El ID del post y el contenido son obligatorios' });
+}
 
     // Buscar el post con postNumber
-    const post = await Post.findOne({ postNumber });
+    const post = await Post.findById(postId);
     if (!post) {
       return res.status(404).json({ message: 'Post no encontrado con ese número' });
     }
 
-    const nextNumber = await getNextSequence('commentNumber');
-
     const newComment = new Comment({
       content,
-      commentNumber: nextNumber,
       author: req.user._id,
       post: post._id
     });
@@ -77,7 +65,8 @@ export const getCommentsByPost = async (req, res) => {
 
   try {
     // Buscar post por postNumber
-    const post = await Post.findOne({ postNumber: Number(postId) });
+    const post = await Post.findById(postId);
+
     if (!post) {
       return res.status(404).json({ message: 'Post no encontrado' });
     }
@@ -96,7 +85,7 @@ export const getCommentsByPost = async (req, res) => {
 
 // Editar comentario
 export const updateComment = async (req, res) => {
- const commentNumber = Number(req.params.commentNumber);
+  const commentId = req.params.commentId;
   const userId = req.user._id;
 
   // Solo permitimos modificar el campo 'content'
@@ -106,14 +95,14 @@ export const updateComment = async (req, res) => {
   }
 
   try {
-    const comment = await Comment.findOne({ commentNumber });
+    const comment = await Comment.findById(commentId);
     if (!comment) return res.status(404).json({ error: 'Comentario no encontrado' });
 
     if (comment.author.toString() !== userId.toString())
       return res.status(403).json({ error: 'No tienes permiso para editar este comentario' });
 
-    const updatedComment = await Comment.findOneAndUpdate(
-      { commentNumber },
+    const updatedComment = await Comment.findByIdAndUpdate(
+      commentId,
       updates,
       { new: true, runValidators: true }
     ).populate('author', 'username');
@@ -129,11 +118,11 @@ export const updateComment = async (req, res) => {
 // Eliminar comentario propio
 export const deleteComment = async (req, res) => {
   try {
-    const { commentNumber } = req.params;
+    const { commentId } = req.params;
     const userId = req.user._id;
 
     // Buscar comentario por commentNumber
-    const comment = await Comment.findOne({ commentNumber });
+    const comment = await Comment.findById(commentId);
 
     if (!comment) return res.status(404).json({ message: 'Comentario no encontrado' });
 
@@ -149,9 +138,35 @@ export const deleteComment = async (req, res) => {
     await User.findByIdAndUpdate(userId, { $pull: { comments: comment._id } });
 
     // Eliminar comentario directamente con findOneAndDelete
-    await Comment.findOneAndDelete({ commentNumber });
+    await Comment.findByIdAndDelete(commentId);
 
     res.json({ message: 'Comentario eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const toggleLikeOnComment = async (req, res) => {
+  const { commentId } = req.params;
+  const userId = req.user._id;
+
+  try {
+    const comment = await Comment.findById(commentId);
+    if (!comment) return res.status(404).json({ message: 'Comentario no encontrado' });
+
+    const hasLiked = comment.likedBy.includes(userId);
+
+    if (hasLiked) {
+      comment.likedBy.pull(userId);
+    } else {
+      comment.likedBy.push(userId);
+    }
+
+    await comment.save();
+    res.json({
+      liked: !hasLiked,
+      likesCount: comment.likedBy.length
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

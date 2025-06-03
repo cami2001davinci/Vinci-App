@@ -64,11 +64,7 @@ const postSchema = new Schema({
     type: Boolean,
     default: false
   },
-  postNumber: {
-  type: Number,
-  unique: true,
-  required: true
-},
+  
 
 }, {
   timestamps: true

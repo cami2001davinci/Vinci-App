@@ -1,17 +1,8 @@
 import User from '../models/usersModel.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs'; // <-- necesario para login
-import Counter from '../models/counterModel.js';
 
-// Función para obtener el siguiente número único (contador)
-const getNextSequence = async (name) => {
-  const counter = await Counter.findOneAndUpdate(
-    { name },
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true }
-  );
-  return counter.seq;
-};
+
 
 // Generar token JWT
 const generateToken = (id) => {
@@ -32,7 +23,7 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'Faltan campos obligatorios' });
     }
 
-    const userNumber = await getNextSequence('userId');
+    
 
     const userExists = await User.findOne({ $or: [{ email }, { username }] });
     if (userExists) {
@@ -73,7 +64,6 @@ export const registerUser = async (req, res) => {
       bio,
       profilePicture,
       lookingForCollab,
-      userNumber,
       role: userRole // CORREGIDO: era "rol"
     });
 
@@ -85,7 +75,6 @@ export const registerUser = async (req, res) => {
         id: newUser._id,
         username: newUser.username,
         email: newUser.email,
-        userNumber: newUser.userNumber,
         role: newUser.role
       },
       token: generateToken(newUser._id)
@@ -146,7 +135,7 @@ export const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findOne({ userNumber: parseInt(id) }).select('-password').exec();
+    const user = await User.findById(id).select('-password').exec();
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -171,7 +160,7 @@ export const updateUser = async (req, res) => {
     const { id } = req.params;
 
     // Buscar por userNumber (no por _id)
-    const user = await User.findOne({ userNumber: parseInt(id) });
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -201,7 +190,7 @@ export const deleteUser = async (req, res) => {
     const { id } = req.params;
 
     // Buscar el usuario por userNumber
-    const user = await User.findOne({ userNumber: parseInt(id) });
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });

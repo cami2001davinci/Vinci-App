@@ -3,10 +3,13 @@ import {
   createPost,
   updatePost,
   getAllPosts,
-  getPostByNumber,
+  getPostById,
   getPostsByDegree,
   getPostsByUser, // ✅ Agregado
-  deletePostByNumber
+  deletePostById,
+  toggleLike,
+  toggleInterest
+
 } from '../controllers/postsController.js';
 import { protect } from '../Middleware/auth.js'
 
@@ -24,13 +27,17 @@ router.get('/my-posts', protect, getPostsByUser);
 router.get('/degree/:slug', getPostsByDegree)
 
 // Obtener un post por ID
-router.get('/:postNumber', getPostByNumber);
+router.get('/:postId', getPostById);
 
 
 // Actualizar un post (solo autor)
-router.put('/:postNumber', protect, updatePost);
+router.put('/:postId', protect, updatePost);
 
 // Eliminar un post (solo autor)
-router.delete('/:postNumber', protect, deletePostByNumber);
+router.delete('/:postId', protect, deletePostById);
+
+router.put('/:postId/like', protect, toggleLike);
+router.put('/:postId/interes', protect, toggleInterest);
+
 
 export default router;
