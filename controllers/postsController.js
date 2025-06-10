@@ -4,15 +4,26 @@ import Degree from '../models/degreesModel.js';
 
 // Función para autoincrementar postNumber
 
+export const flagPost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const post = await Post.findByIdAndUpdate(postId, { flagged: true }, { new: true });
+    if (!post) return res.status(404).json({ message: 'Post no encontrado' });
+    res.json({ message: 'Post marcado como inapropiado', post });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 // Crear un nuevo post
 export const createPost = async (req, res) => {
   try {
-    const { title, content } = req.body;
+   const { content, category } = req.body;
 
-    if (!title || !content) {
-      return res.status(400).json({ message: 'Título y contenido son requeridos' });
-    }
+if (!content || !category) {
+  return res.status(400).json({ message: 'Contenido y categoría son requeridos' });
+}
+
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -24,10 +35,12 @@ export const createPost = async (req, res) => {
     }
 
     const newPost = new Post({
-      ...req.body,
-      author: req.user._id,
-      degree: degree._id,
-    });
+  content,
+  category,
+  author: req.user._id,
+  degree: degree._id,
+});
+
 
     await newPost.save();
 
@@ -40,18 +53,26 @@ export const createPost = async (req, res) => {
   }
 };
 
-// Obtener todos los posts (Home)
+
+// HOME: obtener todos los posts
 export const getAllPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
+    const query = {};
+    if (!req.user?.role || req.user.role !== 'admin') {
+      query.flagged = false;
+    }
+
+    const posts = await Post.find(query)
       .populate('author', 'username')
-      .populate('degree', 'name') 
+      .populate('degree', 'name')
       .sort({ createdAt: -1 });
+
     res.json(posts);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // Obtener todos los posts del usuario autenticado
 export const getPostsByUser = async (req, res) => {
@@ -137,14 +158,19 @@ export const deletePostById = async (req, res) => {
 };
 
 // Obtener todos los posts por carrera (segmentación por slug)
-export const getPostsByDegree= async (req, res) => {
+// FILTRO por carrera
+export const getPostsByDegree = async (req, res) => {
   try {
     const { slug } = req.params;
-
     const degree = await Degree.findOne({ slug });
     if (!degree) return res.status(404).json({ message: 'Carrera no encontrada' });
 
-    const posts = await Post.find({ degree: degree._id })
+    const query = { degree: degree._id };
+    if (!req.user?.role || req.user.role !== 'admin') {
+      query.flagged = false;
+    }
+
+    const posts = await Post.find(query)
       .populate('author', 'username')
       .populate('degree', 'name')
       .sort({ createdAt: -1 });
@@ -154,6 +180,7 @@ export const getPostsByDegree= async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 
 // Dar o quitar "like" a un post

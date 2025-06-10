@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from 'dotenv';
 import routerAPI from './routes/index.js';
 import mongoose from "mongoose";
+import cors from 'cors';
 
 dotenv.config();
 
@@ -9,10 +10,11 @@ const app = express();
 const port = process.env.PORT;
 const dburi = process.env.MONGODB_URI;
 
+
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
-
+app.use(cors());
 // Ruta raíz
 app.get('/', (req, res) => {
   console.log('Ruta Raiz');

@@ -4,6 +4,17 @@ import Post from '../models/postsModel.js';  // <-- Importar el modelo Post
 import User from '../models/usersModel.js';
 
 
+export const flagComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const comment = await Comment.findByIdAndUpdate(commentId, { flagged: true }, { new: true });
+    if (!comment) return res.status(404).json({ message: 'Comentario no encontrado' });
+    res.json({ message: 'Comentario marcado como inapropiado', comment });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 // Crear nuevo comentario
 export const createComment = async (req, res) => {
@@ -61,26 +72,30 @@ export const getCommentsByUser = async (req, res) => {
 
 // Obtener comentarios por post
 export const getCommentsByPost = async (req, res) => {
-  const { postId } = req.params; // en realidad es postNumber
+  const { postId } = req.params;
 
   try {
-    // Buscar post por postNumber
     const post = await Post.findById(postId);
-
     if (!post) {
       return res.status(404).json({ message: 'Post no encontrado' });
     }
 
-    // Buscar comentarios relacionados al ObjectId del post
-    const comments = await Comment.find({ post: post._id })
+    // Obtener comentarios NO flagged si el usuario no es admin
+    const query = { post: post._id };
+    if (!req.user?.role || req.user.role !== 'admin') {
+      query.flagged = false;
+    }
+
+    const comments = await Comment.find(query)
       .populate('author', 'username')
-      .sort({ createdAt: 1 }); // ascendente por fecha
+      .sort({ createdAt: 1 });
 
     res.json(comments);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 
 // Editar comentario

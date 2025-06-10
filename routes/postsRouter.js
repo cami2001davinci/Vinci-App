@@ -1,4 +1,6 @@
 import express from 'express';
+import { createPostSchema } from '../validations/postAndCommentValidation.js';
+import { validateBody } from '../Middleware/validate.js';
 import {
   createPost,
   updatePost,
@@ -8,7 +10,8 @@ import {
   getPostsByUser, // ✅ Agregado
   deletePostById,
   toggleLike,
-  toggleInterest
+  toggleInterest,
+  flagPost 
 
 } from '../controllers/postsController.js';
 import { protect } from '../Middleware/auth.js'
@@ -16,7 +19,7 @@ import { protect } from '../Middleware/auth.js'
 const router = express.Router();
 
 // Crear un post
-router.post('/', protect, createPost);
+router.post('/', protect, validateBody(createPostSchema), createPost);
 
 // Obtener todos los posts
 router.get('/', getAllPosts);
@@ -38,6 +41,8 @@ router.delete('/:postId', protect, deletePostById);
 
 router.put('/:postId/like', protect, toggleLike);
 router.put('/:postId/interes', protect, toggleInterest);
+
+router.put('/flag/:postId', protect, flagPost);
 
 
 export default router;

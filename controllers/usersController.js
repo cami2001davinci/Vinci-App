@@ -5,23 +5,36 @@ import bcrypt from 'bcryptjs'; // <-- necesario para login
 
 
 // Generar token JWT
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+const generateToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
     expiresIn: '7d'
   });
 };
 
+
 // Registrar un nuevo usuario
 export const registerUser = async (req, res) => {
   try {
-    const {
-      username, firstName, lastName, degree, age,
-      email, password, interests, bio, profilePicture, lookingForCollab, role
-    } = req.body;
+   const {
+  username, firstName, lastName, degree, birthDate,
+  email, password, interests, bio, profilePicture, lookingForCollab, role
+} = req.body;
 
-    if (!username || !email || !password || !firstName || !lastName || !degree || !age) {
-      return res.status(400).json({ message: 'Faltan campos obligatorios' });
-    }
+if (!username || !email || !password || !firstName || !lastName || !degree || !birthDate) {
+  return res.status(400).json({ message: 'Faltan campos obligatorios' });
+}
+
+// Validar formato de fecha
+const parsedBirthDate = new Date(birthDate);
+if (isNaN(parsedBirthDate.getTime())) {
+  return res.status(400).json({ message: 'Fecha de nacimiento inválida' });
+}
+
+// Validar que no sea una fecha futura
+if (parsedBirthDate > new Date()) {
+  return res.status(400).json({ message: 'La fecha de nacimiento no puede ser futura' });
+}
+
 
     
 
@@ -57,7 +70,7 @@ export const registerUser = async (req, res) => {
       firstName,
       lastName,
       degree,
-      age,
+      birthDate: parsedBirthDate,
       email,
       password,
       interests,
@@ -70,15 +83,16 @@ export const registerUser = async (req, res) => {
     await newUser.save();
 
     res.status(201).json({
-      message: 'Usuario registrado correctamente',
-      user: {
-        id: newUser._id,
-        username: newUser.username,
-        email: newUser.email,
-        role: newUser.role
-      },
-      token: generateToken(newUser._id)
-    });
+  message: 'Usuario registrado correctamente',
+  user: {
+    id: newUser._id,
+    username: newUser.username,
+    email: newUser.email,
+    role: newUser.role
+  },
+  token: generateToken(newUser._id, newUser.role) 
+});
+
   } catch (error) {
     console.error('Error al registrar usuario:', error);
 
@@ -96,28 +110,66 @@ export const registerUser = async (req, res) => {
 // Iniciar sesión
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email y contraseña son obligatorios' });
+    // Buscar por email o username
+    const user = await User.findOne({
+      $or: [
+        { email: identifier.toLowerCase() },
+        { username: identifier.toLowerCase() }
+      ]
+    });
+
+    if (!user) {
+      return res.status(401).json({ message: 'Usuario no encontrado' });
     }
 
-    const user = await User.findOne({ email });
+    const passwordIsValid = await bcrypt.compare(password, user.password);
 
-    if (user && (await bcrypt.compare(password, user.password))) {
-      res.json({
-        id: user._id,
-        username: user.username,
-        role: user.role,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(401).json({ message: 'Email o contraseña incorrectos' });
+    if (!passwordIsValid) {
+      return res.status(401).json({ message: 'Contraseña incorrecta' });
     }
+
+    res.json({
+      id: user._id,
+      username: user.username,
+      role: user.role,
+      token: generateToken(user._id, user.role),
+    });
   } catch (err) {
+    console.error('Error en login:', err);
     res.status(500).json({ message: 'Error en el servidor', error: err.message });
   }
-}; 
+};
+
+
+
+ // Iniciar sesión
+// export const loginUser = async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     if (!email || !password) {
+//       return res.status(400).json({ message: 'Email y contraseña son obligatorios' });
+//     }
+
+//     const user = await User.findOne({ email });
+
+//     if (user && (await bcrypt.compare(password, user.password))) {
+//       res.json({
+//   id: user._id,
+//   username: user.username,
+//   role: user.role,
+//   token: generateToken(user._id, user.role) // ← aquí también
+// });
+
+//     } else {
+//       res.status(401).json({ message: 'Email o contraseña incorrectos' });
+//     }
+//   } catch (err) {
+//     res.status(500).json({ message: 'Error en el servidor', error: err.message });
+//   }
+// }; 
 
 // Obtener todos los usuarios
 export const getAllUsers = async (req, res) => {
@@ -130,23 +182,55 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// Obtener un usuario por ID
+
+// Obtener un usuario por ID (con posts y comentarios)
 export const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await User.findById(id).select('-password').exec();
+    const user = await User.findById(id)
+      .select('-password')
+      .populate({
+        path: 'posts',
+        select: 'title content createdAt author',
+        options: { sort: { createdAt: -1 } },
+        populate: {
+          path: 'author',
+          select: 'username profilePicture'
+        }
+      })
+      .populate({
+        path: 'comments',
+        select: 'content post createdAt author',
+        options: { sort: { createdAt: -1 } },
+        populate: {
+          path: 'author',
+          select: 'username profilePicture'
+        }
+      })
+      .exec();
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    // Validar que el usuario autenticado sea el mismo o un admin
     if (req.user._id.toString() !== user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'No autorizado para ver este perfil' });
     }
 
-    res.json(user);
+    // Calcular edad
+    let age = null;
+    if (user.birthDate) {
+      const today = new Date();
+      const birth = new Date(user.birthDate);
+      age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+    }
+
+    res.json({ ...user.toObject(), age });
   } catch (error) {
     console.error('Error al obtener usuario:', error);
     res.status(500).json({ message: 'Error del servidor' });
@@ -154,12 +238,14 @@ export const getUserById = async (req, res) => {
 };
 
 
+
+
 // Actualizar usuario
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Buscar por userNumber (no por _id)
+    // Buscar por  por _id)
     const user = await User.findById(id);
 
     if (!user) {
@@ -189,7 +275,7 @@ export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Buscar el usuario por userNumber
+    // Buscar el usuario por userId
     const user = await User.findById(id);
 
     if (!user) {

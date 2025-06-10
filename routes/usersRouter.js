@@ -1,4 +1,7 @@
 import express from 'express';
+import { validateBody } from '../Middleware/validate.js'; 
+import { userLoginSchema } from '../validations/usersValidation.js';
+import { userRegisterSchema } from '../validations/usersValidation.js'; // ✅ esquema Joi
 import { protect, isAdmin } from '../Middleware/auth.js'
 import {
   registerUser,
@@ -11,8 +14,9 @@ import {
 
 const router = express.Router();
 
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/register', validateBody(userRegisterSchema), registerUser);
+
+router.post('/login', validateBody(userLoginSchema), loginUser);
 
 router.get('/', protect, isAdmin, getAllUsers);
 
