@@ -15,55 +15,7 @@ export const flagPost = async (req, res) => {
   }
 };
 
-// Crear un nuevo post
-// export const createPost = async (req, res) => {
-//   try {
-//     const { content, category } = req.body;
 
-//     if (!content || !category) {
-//       return res.status(400).json({ message: 'Contenido y categoría son requeridos' });
-//     }
-
-//     const user = await User.findById(req.user.id);
-//     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
-
-//     const degree = await Degree.findById(user.degree);
-//     if (!degree) {
-//       return res.status(400).json({ message: 'Carrera del usuario no encontrada' });
-//     }
-
-//      //Detectar si multer subio un archivo
-//     let imagePaths = [];
-// if (req.files && req.files.length > 0) {
-//   imagePaths = req.files.map(file => `/uploads/imgs/${file.filename}`);
-// }
-
-
-
-//     // Crear el post incluyendo la imagen (si hay)
-//     const newPost = new Post({
-//       content,
-//       category,
-//       author: req.user.id,
-//       degree: degree._id,
-//       images: imagePaths // puede ser null si no se subió
-//     });
-
-//     await newPost.save();
-
-//     user.posts.push(newPost._id);
-//     await user.save();
-
-//     // Aca populamos el post antes de devolverlo
-//     const populatedPost = await Post.findById(newPost._id)
-//       .populate('author', 'username')
-//       .populate('degree', 'name');
-
-//     res.status(201).json(populatedPost);
-//   } catch (error) {
-//     res.status(400).json({ message: error.message });
-//   }
-// };
 export const createPost = async (req, res) => {
   try {
     const { content, category } = req.body;

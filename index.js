@@ -72,7 +72,7 @@ const app = express();
 const port = process.env.PORT;
 const dburi = process.env.MONGODB_URI;
 
-// ✅ CORS para las rutas de API
+// CORS para las rutas de API
 app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true,
@@ -81,17 +81,17 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ Middleware para agregar headers CORS a los archivos estáticos (PDFs, imágenes)
+// Middleware para agregar headers CORS a los archivos estáticos (PDFs, imágenes)
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
 
-// ✅ Servir archivos estáticos
+//  Servir archivos estáticos
 app.use(express.static(path.join(process.cwd(), 'public')));
 
-// ✅ Servir explícitamente /uploads (PDFs, imágenes, etc.)
+// Servir explícitamente /uploads (PDFs, imágenes, etc.)
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
 // Rutas de la API
