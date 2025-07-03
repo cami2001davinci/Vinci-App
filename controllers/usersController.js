@@ -13,30 +13,26 @@ const generateToken = (id, role) => {
 
 
 // Registrar un nuevo usuario
+// Registrar un nuevo usuario
 export const registerUser = async (req, res) => {
   try {
-   const {
-  username, firstName, lastName, degree, birthDate,
-  email, password, interests, bio, profilePicture, lookingForCollab, role
-} = req.body;
+    const {
+      username, firstName, lastName, degree, birthDate,
+      email, password, interests, bio, profilePicture, lookingForCollab, role
+    } = req.body;
 
-if (!username || !email || !password || !firstName || !lastName || !degree || !birthDate) {
-  return res.status(400).json({ message: 'Faltan campos obligatorios' });
-}
+    if (!username || !email || !password || !firstName || !lastName || !degree || !birthDate) {
+      return res.status(400).json({ message: 'Faltan campos obligatorios' });
+    }
 
-// Validar formato de fecha
-const parsedBirthDate = new Date(birthDate);
-if (isNaN(parsedBirthDate.getTime())) {
-  return res.status(400).json({ message: 'Fecha de nacimiento inválida' });
-}
+    const parsedBirthDate = new Date(birthDate);
+    if (isNaN(parsedBirthDate.getTime())) {
+      return res.status(400).json({ message: 'Fecha de nacimiento inválida' });
+    }
 
-// Validar que no sea una fecha futura
-if (parsedBirthDate > new Date()) {
-  return res.status(400).json({ message: 'La fecha de nacimiento no puede ser futura' });
-}
-
-
-    
+    if (parsedBirthDate > new Date()) {
+      return res.status(400).json({ message: 'La fecha de nacimiento no puede ser futura' });
+    }
 
     const userExists = await User.findOne({ $or: [{ email }, { username }] });
     if (userExists) {
@@ -77,30 +73,27 @@ if (parsedBirthDate > new Date()) {
       bio,
       profilePicture,
       lookingForCollab,
-      role: userRole // CORREGIDO: era "rol"
+      role: userRole
     });
 
     await newUser.save();
 
     res.status(201).json({
-  message: 'Usuario registrado correctamente',
-  user: {
-    id: newUser._id,
-    username: newUser.username,
-    email: newUser.email,
-    role: newUser.role
-  },
-  token: generateToken(newUser._id, newUser.role) 
-});
-
+      message: 'Usuario registrado correctamente',
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        email: newUser.email,
+        role: newUser.role
+      },
+      token: generateToken(newUser._id, newUser.role)
+    });
   } catch (error) {
     console.error('Error al registrar usuario:', error);
 
     if (error.code === 11000) {
       const campoDuplicado = Object.keys(error.keyPattern)[0];
-      return res.status(409).json({
-        message: `El ${campoDuplicado} ya está registrado`
-      });
+      return res.status(409).json({ message: `El ${campoDuplicado} ya está registrado` });
     }
 
     res.status(500).json({ message: 'Error del servidor' });
@@ -112,7 +105,6 @@ export const loginUser = async (req, res) => {
   try {
     const { identifier, password } = req.body;
 
-    // Buscar por email o username
     const user = await User.findOne({
       $or: [
         { email: identifier.toLowerCase() },
@@ -124,18 +116,27 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ message: 'Usuario no encontrado' });
     }
 
-    const passwordIsValid = await bcrypt.compare(password, user.password);
-
-    if (!passwordIsValid) {
-      return res.status(401).json({ message: 'Contraseña incorrecta' });
+    if (!user.password) {
+      return res.status(500).json({ message: 'Error interno al procesar la contraseña' });
     }
 
-    res.json({
-      id: user._id,
-      username: user.username,
-      role: user.role,
-      token: generateToken(user._id, user.role),
-    });
+    try {
+      const passwordIsValid = await bcrypt.compare(password, user.password);
+
+      if (!passwordIsValid) {
+        return res.status(401).json({ message: 'Contraseña incorrecta' });
+      }
+
+      res.json({
+        id: user._id,
+        username: user.username,
+        role: user.role,
+        token: generateToken(user._id, user.role),
+      });
+    } catch (err) {
+      console.error('Error al verificar contraseña:', err);
+      res.status(500).json({ message: 'Error al verificar la contraseña' });
+    }
   } catch (err) {
     console.error('Error en login:', err);
     res.status(500).json({ message: 'Error en el servidor', error: err.message });
@@ -144,7 +145,7 @@ export const loginUser = async (req, res) => {
 
 
 
- // Iniciar sesión
+ 
 // export const loginUser = async (req, res) => {
 //   try {
 //     const { email, password } = req.body;
@@ -296,4 +297,41 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
+
+export const getMyNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .select('notifications')
+      .populate('notifications.post', 'content')
+      .populate('notifications.fromUser', 'username');
+
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    res.json(user.notifications.reverse()); // más recientes primero
+  } catch (error) {
+    console.error('Error al obtener notificaciones:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+export const markNotificationsAsRead = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    user.notifications.forEach(notif => {
+      notif.read = true;
+    });
+
+    await user.save();
+
+    res.json({ message: 'Notificaciones marcadas como leídas' });
+  } catch (error) {
+    console.error('Error al marcar notificaciones:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+
+
 

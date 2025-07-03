@@ -16,42 +16,114 @@ export const flagPost = async (req, res) => {
 };
 
 // Crear un nuevo post
+// export const createPost = async (req, res) => {
+//   try {
+//     const { content, category } = req.body;
+
+//     if (!content || !category) {
+//       return res.status(400).json({ message: 'Contenido y categoría son requeridos' });
+//     }
+
+//     const user = await User.findById(req.user.id);
+//     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+//     const degree = await Degree.findById(user.degree);
+//     if (!degree) {
+//       return res.status(400).json({ message: 'Carrera del usuario no encontrada' });
+//     }
+
+//      //Detectar si multer subio un archivo
+//     let imagePaths = [];
+// if (req.files && req.files.length > 0) {
+//   imagePaths = req.files.map(file => `/uploads/imgs/${file.filename}`);
+// }
+
+
+
+//     // Crear el post incluyendo la imagen (si hay)
+//     const newPost = new Post({
+//       content,
+//       category,
+//       author: req.user.id,
+//       degree: degree._id,
+//       images: imagePaths // puede ser null si no se subió
+//     });
+
+//     await newPost.save();
+
+//     user.posts.push(newPost._id);
+//     await user.save();
+
+//     // Aca populamos el post antes de devolverlo
+//     const populatedPost = await Post.findById(newPost._id)
+//       .populate('author', 'username')
+//       .populate('degree', 'name');
+
+//     res.status(201).json(populatedPost);
+//   } catch (error) {
+//     res.status(400).json({ message: error.message });
+//   }
+// };
 export const createPost = async (req, res) => {
   try {
-   const { content, category } = req.body;
+    const { content, category } = req.body;
 
-if (!content || !category) {
-  return res.status(400).json({ message: 'Contenido y categoría son requeridos' });
-}
+    if (!content || !category) {
+      return res.status(400).json({ message: 'Contenido y categoría son requeridos' });
+    }
 
-
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
-    // Buscar la carrera correspondiente al nombre que tiene el usuario
-    const degree = await Degree.findOne({ name: user.degree });
+    const degree = await Degree.findById(user.degree);
     if (!degree) {
       return res.status(400).json({ message: 'Carrera del usuario no encontrada' });
     }
 
-    const newPost = new Post({
-  content,
-  category,
-  author: req.user._id,
-  degree: degree._id,
-});
+    let imagePaths = [];
+    let documentPaths = [];
 
+    if (req.files && req.files.length > 0) {
+      const imageTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+
+      req.files.forEach(file => {
+        // Si es imagen
+        if (imageTypes.includes(file.mimetype)) {
+          imagePaths.push(`/uploads/imgs/${file.filename}`);
+        } else {
+          // Si no es imagen, asumimos documento
+          documentPaths.push(`/uploads/docs/${file.filename}`);
+        }
+      });
+    }
+
+    // Crear el post con imágenes y documentos
+    const newPost = new Post({
+      content,
+      category,
+      author: req.user.id,
+      degree: degree._id,
+      images: imagePaths,      // array de imágenes
+      documents: documentPaths // array de documentos
+    });
 
     await newPost.save();
 
     user.posts.push(newPost._id);
     await user.save();
 
-    res.status(201).json(newPost);
+    const populatedPost = await Post.findById(newPost._id)
+      .populate('author', 'username profilePicture')
+      .populate('degree', 'name');
+
+    res.status(201).json(populatedPost);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 };
+
+
+
 
 
 // HOME: obtener todos los posts
@@ -63,7 +135,7 @@ export const getAllPosts = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'username')
+      .populate('author', 'username profilePicture')
       .populate('degree', 'name')
       .sort({ createdAt: -1 });
 
@@ -78,7 +150,7 @@ export const getAllPosts = async (req, res) => {
 export const getPostsByUser = async (req, res) => {
   try {
     const posts = await Post.find({ author: req.user._id })
-      .populate('author', 'username')
+      .populate('author', 'username profilePicture')
       .populate('degree', 'name')
       .populate({
         path: 'comments',
@@ -98,7 +170,7 @@ export const getPostById = async (req, res) => {
     const postId = req.params.postId;
 
     const post = await Post.findById(postId)
-      .populate('author', 'username')
+      .populate('author', 'username profilePicture')
       .populate('degree', 'name')
       .populate({
         path: 'comments',
@@ -171,7 +243,7 @@ export const getPostsByDegree = async (req, res) => {
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'username')
+      .populate('author', 'username profilePicture')
       .populate('degree', 'name')
       .sort({ createdAt: -1 });
 
@@ -198,6 +270,19 @@ export const toggleLike = async (req, res) => {
       post.likedBy.pull(userId);
     } else {
       post.likedBy.push(userId);
+
+      // ✅ Crear notificación solo si es un nuevo like
+      const author = await User.findById(post.author);
+
+      if (author && author._id.toString() !== userId.toString()) {
+        author.notifications.push({
+          type: 'like',
+          message: 'A alguien le gustó tu post.',
+          post: post._id,
+          fromUser: userId
+        });
+        await author.save();
+      }
     }
 
     await post.save();
@@ -206,9 +291,11 @@ export const toggleLike = async (req, res) => {
       likesCount: post.likedBy.length
     });
   } catch (error) {
+    console.error('Error en toggleLike:', error); // 👈 Importante para ver detalles
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // Mostrar o quitar interés en colaborar (match)
 export const toggleInterest = async (req, res) => {
@@ -221,11 +308,24 @@ export const toggleInterest = async (req, res) => {
 
     const hasInterest = post.interestedUsers.includes(userId);
 
-    if (hasInterest) {
+        if (hasInterest) {
       post.interestedUsers.pull(userId);
     } else {
       post.interestedUsers.push(userId);
+
+      // Crear notificación al autor
+      const author = await User.findById(post.author);
+      if (author && author._id.toString() !== userId.toString()) {
+        author.notifications.push({
+          type: 'match',
+          message: `Un usuario mostró interés en tu post.`,
+          post: post._id,
+          fromUser: userId
+        });
+        await author.save();
+      }
     }
+
 
     await post.save();
     res.json({

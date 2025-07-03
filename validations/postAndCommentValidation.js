@@ -37,5 +37,6 @@ export const createCommentSchema = Joi.object({
       'string.empty': 'El comentario no puede estar vacío',
       'string.min': 'El comentario es demasiado corto',
       'string.max': 'El comentario es demasiado largo'
-    })
+    }),
+  parentComment: Joi.string().optional() 
 });

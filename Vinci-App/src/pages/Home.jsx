@@ -1,21 +1,56 @@
-// src/pages/Home.jsx
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import axios from '../api/axiosInstance';
+import ThreeColumnLayout from '../components/ThreeColumnLayout';
+import Sidebar from '../components/SideBar';
+import PostForm from '../components/PostForm';
+import PostCard from '../components/PostCard';
+import { useAuth } from '../context/AuthContext';
 
-export default function Home() {
+const HomePage = () => {
+  const { user } = useAuth(); // accedo al usuario logueado
+  const [posts, setPosts] = useState([]);
+
+  const loadPosts = async () => {
+    try {
+      const res = await axios.get('/posts');
+      setPosts(res.data);
+    } catch (err) {
+      console.error('Error al cargar posts:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadPosts();
+  }, []);
+
+  const handleNewPost = (newPost) => {
+    setPosts([newPost, ...posts]);
+  };
+
+  const handlePostChanged = () => {
+    loadPosts();
+  };
+
   return (
-    <div className="container mt-2">
-      <nav className="navbar navbar-light bg-light justify-content-between">
-        <a className="navbar-brand">VINCI</a>
-        <div>
-          <Link to="/login" className="btn btn-outline-primary me-2">Iniciar sesión</Link>
-          <Link to="/register" className="btn btn-outline-secondary">Registrarse</Link>
-        </div>
-      </nav>
+    <ThreeColumnLayout
+      left={<Sidebar />}
+      center={
+        <div className="d-flex flex-column gap-3">
+          {user?.role === 'admin' ? (
+            <PostForm onNewPost={handleNewPost} />
+          ) : (
+            <p className="text-muted text-center">Solo los administradores pueden publicar en la Home.</p>
+          )}
+          {posts.map(post => (
+  <PostCard key={post._id} post={post} onPostChanged={handlePostChanged} readOnly={true} />
+))}
 
-      <div className="mt-5 text-center">
-        <h1>Bienvenido a VINCI</h1>
-        <p>Explorá nuestras funciones, ¡iniciá sesión o registrate!</p>
-      </div>
-    </div>
+        </div>
+      }
+      right={null}
+    />
   );
-}
+};
+
+export default HomePage;
+

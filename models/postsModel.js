@@ -64,6 +64,11 @@ const postSchema = new Schema({
     type: Boolean,
     default: false
   },
+  images: {
+  type: [String],
+  default: null
+}, 
+documents: [String],
   
 
 }, {

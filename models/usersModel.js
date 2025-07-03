@@ -19,10 +19,12 @@ const userSchema = new Schema({
     type: String,
     required: true
   },
-  degree: { // carrera
-    type: String,
-    required: true
-  },
+ degree: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Degree',
+  required: true
+},
+
   // age: {
   //   type: Number
   // },
@@ -42,6 +44,10 @@ const userSchema = new Schema({
     type: String,
     default: ''
   },
+  coverPicture: {
+  type: String,
+  default: ''
+},
   posts: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Post'
@@ -74,6 +80,35 @@ const userSchema = new Schema({
     type: String,
     required: true
   },
+  
+  notifications: [{
+  type: {
+  type: String,
+  enum: ['match', 'comentario', 'sistema', 'like'], // ✅ agregamos 'like'
+  required: true
+},
+  message: {
+    type: String,
+    required: true
+  },
+  post: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Post'
+  },
+  fromUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  read: {
+    type: Boolean,
+    default: false
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+}],
+
   role: {
     type: String,
     enum: ['user', 'admin'],

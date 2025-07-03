@@ -22,6 +22,19 @@ const commentSchema = new mongoose.Schema({
     ref: 'Post',
     required: true
   },
+  images: {
+  type: [String],
+  default: []
+},
+  parentComment: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Comment', 
+    default: null },
+  
+  replies: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Comment' }],
+
   flagged: {
     type: Boolean,
     default: false
