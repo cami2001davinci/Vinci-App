@@ -97,8 +97,8 @@ export default function Register() {
     }
   };
 
-  // 🔧 Utilidad para márgenes dinámicos
-  const getMarginClass = (field) => (errors[field] ? "mb-1" : "mb-3");
+  // Utilidad para márgenes dinámicos
+  const getMarginClass = () => "mb-1";
 
   return (
     <main className="register-page">
@@ -113,7 +113,11 @@ export default function Register() {
 
           <div className="form-grid">
             <div className={getMarginClass("username")}>
+              <label htmlFor="username" className="visually-hidden">
+                Nombre de usuario
+              </label>
               <input
+                id="username"
                 className={`form-control ${
                   errors.username ? "is-invalid" : ""
                 }`}
@@ -128,7 +132,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("email")}>
+              <label htmlFor="email" className="visually-hidden">
+                Correo electrónico
+              </label>
               <input
+                id="email"
                 className={`form-control ${errors.email ? "is-invalid" : ""}`}
                 name="email"
                 type="email"
@@ -142,7 +150,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("password")}>
+              <label htmlFor="password" className="visually-hidden">
+                Contraseña
+              </label>
               <input
+                id="password"
                 className={`form-control ${
                   errors.password ? "is-invalid" : ""
                 }`}
@@ -158,7 +170,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("firstName")}>
+              <label htmlFor="firstName" className="visually-hidden">
+                Nombre
+              </label>
               <input
+                id="firstName"
                 className={`form-control ${
                   errors.firstName ? "is-invalid" : ""
                 }`}
@@ -173,7 +189,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("lastName")}>
+              <label htmlFor="lastName" className="visually-hidden">
+                Apellido
+              </label>
               <input
+                id="lastName"
                 className={`form-control ${
                   errors.lastName ? "is-invalid" : ""
                 }`}
@@ -188,7 +208,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("degree")}>
+              <label htmlFor="degree" className="visually-hidden">
+                Carrera
+              </label>
               <select
+                id="degree"
                 className={`form-control ${errors.degree ? "is-invalid" : ""}`}
                 name="degree"
                 value={form.degree}
@@ -207,7 +231,11 @@ export default function Register() {
             </div>
 
             <div className={getMarginClass("birthDate")}>
+              <label htmlFor="birthDate" className="form-label">
+                Fecha de nacimiento{" "}
+              </label>
               <input
+                id="birthDate"
                 className={`form-control ${
                   errors.birthDate ? "is-invalid" : ""
                 }`}

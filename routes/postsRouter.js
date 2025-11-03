@@ -10,6 +10,8 @@ import {
   getPostById,
   getPostsByDegree,
   getPostsByUser, // ✅ Agregado
+  getCategoryStatsByDegree,
+  getCategoryActivityByDegree,
   deletePostById,
   toggleLike,
   toggleInterest,
@@ -80,9 +82,8 @@ const uploads = multer({
 router.post(
   '/',
   protect,
-  uploads.array('files', 5), // el nombre 'files' debe coincidir con el input del frontend
-  validateBody(createPostSchema),
-  createPost
+  uploads.array('files', 5),
+  createPost        // 👈 sin validateBody aquí
 );
 
 
@@ -108,6 +109,10 @@ router.put('/:postId/like', protect, toggleLike);
 router.put('/:postId/interes', protect, toggleInterest);
 
 router.put('/flag/:postId', protect, flagPost);
+
+router.get('/degree/:slug/category-stats', getCategoryStatsByDegree);
+
+router.get('/degree/:slug/category-activity', getCategoryActivityByDegree);
 
 
 export default router;

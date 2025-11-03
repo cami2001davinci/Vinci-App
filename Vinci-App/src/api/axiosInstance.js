@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 const axiosInstance = axios.create({
-  baseURL: 'http://localhost:3000/api', // o el que uses
+  baseURL: 'http://localhost:3000/api', 
 });
 
 // Este interceptor chequea tanto localStorage como sessionStorage

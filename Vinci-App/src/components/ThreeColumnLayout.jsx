@@ -1,22 +1,20 @@
-// components/ThreeColumnLayout.jsx
-const ThreeColumnLayout = ({ left, center, right }) => {
+// src/components/ThreeColumnLayout.jsx
+export default function ThreeColumnLayout({ left, center, right }) {
   return (
     <div className="container-fluid">
-      <div className="row min-vh-100">
-        <aside className="col-md-3 d-none d-md-block bg-light p-3">
-          {left}
+      <div className="vinci-3col">
+        <aside className="vinci-left">
+          {left || null}
         </aside>
 
-        <main className="col-12 col-md-6 p-3">
-          {center}
+        <main className="vinci-center">
+          {center || null}
         </main>
 
-        <div className="col-md-3 d-none d-md-block bg-light p-3">
-          {right}
-        </div>
+        <aside className="vinci-right">
+          {right || null}
+        </aside>
       </div>
     </div>
   );
-};
-
-export default ThreeColumnLayout;
+}

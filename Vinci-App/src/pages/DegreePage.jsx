@@ -1,107 +1,121 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
-import PostCard from '../components/PostCard';
-import PostForm from '../components/PostForm';
+
 import ThreeColumnLayout from '../components/ThreeColumnLayout';
-import Sidebar from '../components/SideBar';
-import { useAuth } from '../context/AuthContext';
+import DegreeComposer from '../components/DegreeComposer';
+import CategoryFilter from '../components/CategoryFilter';
+import PostCard from '../components/PostCard';
+import LeftColumn from '../components/LeftColumn';
+import RightColumn from '../components/RightColumn';
 
 const DegreePage = () => {
-  const { user } = useAuth();
   const { slug } = useParams();
+  const [degree, setDegree] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [catFilter, setCatFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [userDegreeSlug, setUserDegreeSlug] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('');
 
+  // Posts
   const fetchPosts = async () => {
     setLoading(true);
     try {
       const res = await axios.get(`/posts/degree/${slug}`);
       if (Array.isArray(res.data)) {
         setPosts(res.data);
+      } else if (Array.isArray(res.data.items)) {
+        setPosts(res.data.items);
       } else {
-        setError('Error inesperado: la respuesta no es una lista.');
+        setError('Respuesta inesperada del servidor.');
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Error al cargar los posts';
-      setError(msg);
+      setError(err.response?.data?.message || 'Error al cargar posts');
     } finally {
       setLoading(false);
     }
   };
 
+  // Info de la carrera (para la columna izquierda)
+  const fetchDegree = async () => {
+    try {
+      const res = await axios.get(`/degrees/${slug}`);
+      setDegree(res.data);
+    } catch {
+      setDegree(null);
+    }
+  };
+
   useEffect(() => {
+    fetchDegree();
     fetchPosts();
   }, [slug]);
 
-  useEffect(() => {
-    const fetchUserDegree = async () => {
-      try {
-        const res = await axios.get('/users/me');
-        if (res.data?.degree?.slug) {
-          setUserDegreeSlug(res.data.degree.slug);
-        }
-      } catch (err) {
-        console.error('Error al obtener la carrera del usuario:', err);
-      }
-    };
-
-    fetchUserDegree();
-  }, []);
-
   const handleNewPost = (post) => {
-    setPosts(prev => [post, ...prev]);
+    if (!post) return fetchPosts();
+    setPosts((prev) => [post, ...prev]);
   };
 
-  const postsFiltrados = filtroCategoria
-    ? posts.filter(post => post.category === filtroCategoria)
-    : posts;
+  const filteredPosts = catFilter ? posts.filter(p => p.category === catFilter) : posts;
 
   return (
-    <ThreeColumnLayout
-      left={<Sidebar />}
-      center={
-        <div className="d-flex flex-column gap-3 p-3">
-          <h1 className="fs-3 fw-bold mb-3 text-capitalize">Sección: {slug.replace(/-/g, ' ')}</h1>
+    <>
+      {/* Top bar: flecha a Home + logo Vinci centrado */}
+      <div className="container mb-3">
+        <div
+          className="d-flex align-items-center justify-content-between py-2 position-sticky top-0 bg-white"
+          style={{ zIndex: 1020 }}
+        >
+          {/* Flecha volver */}
+          <Link
+            to="/"
+            className="btn btn-light d-inline-flex align-items-center gap-2"
+            aria-label="Volver a inicio"
+          >
+            <i className="bi bi-arrow-left"></i>
+            <span className="d-none d-sm-inline">Inicio</span>
+          </Link>
 
-          {userDegreeSlug === slug ? (
-            <PostForm onNewPost={handleNewPost} />
-          ) : (
-            <p className="text-muted mb-3">
-              Solo puedes publicar en la sección de tu carrera.
-            </p>
-          )}
+          {/* Logo al centro (link a Home) */}
+          <Link to="/" className="text-decoration-none">
+            <img
+              src="/img/logo-2.svg"   // <- tu archivo
+              alt="Vinci"
+              style={{ height: 36 }}
+            />
+          </Link>
 
-          <div className="mb-3">
-            <label className="form-label fw-bold me-2">Filtrar por categoría:</label>
-            <select
-              className="form-select w-auto d-inline-block"
-              value={filtroCategoria}
-              onChange={(e) => setFiltroCategoria(e.target.value)}
-            >
-              <option value="">Todas</option>
-              <option value="comunidad_general">General</option>
-              <option value="buscar_colaboradores">Buscar Colaboradores</option>
-              <option value="dudas_tecnicas">Dudas Técnicas</option>
-              <option value="feedback_proyectos">Feedback Proyectos</option>
-              <option value="inspiracion_referencias">Inspiración</option>
-            </select>
-          </div>
-
-          {loading && <p>Cargando posts...</p>}
-          {error && <p className="text-danger">{error}</p>}
-          {!loading && !error && postsFiltrados.length === 0 && <p>No hay publicaciones en esta sección.</p>}
-
-          {postsFiltrados.map(post => (
-            <PostCard key={post._id} post={post} onPostChanged={fetchPosts} />
-          ))}
+          {/* Placeholder para balancear el centro */}
+          <div style={{ width: 90 }} className="d-none d-sm-block"></div>
         </div>
-      }
-      right={null} // O podrías agregar algo en el futuro
-    />
+      </div>
+
+      <ThreeColumnLayout
+        left={<LeftColumn degree={degree} slug={slug} />}
+        center={
+          <div className="d-flex flex-column gap-3 p-3">
+            {/* (Quitamos el título de carrera aquí) */}
+
+            {/* Caja de publicación en 2 pasos */}
+            <DegreeComposer onNewPost={handleNewPost} />
+
+            {/* Filtro con contadores */}
+            <CategoryFilter degreeSlug={slug} value={catFilter} onChange={setCatFilter} />
+
+            {/* Feed */}
+            {loading && <p>Cargando posts…</p>}
+            {error && <p className="text-danger">{error}</p>}
+            {!loading && !error && filteredPosts.length === 0 && (
+              <p>No hay publicaciones todavía.</p>
+            )}
+            {filteredPosts.map((post) => (
+              <PostCard key={post._id} post={post} onPostChanged={fetchPosts} />
+            ))}
+          </div>
+        }
+        right={<RightColumn />}
+      />
+    </>
   );
 };
 

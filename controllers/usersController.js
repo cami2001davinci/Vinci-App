@@ -17,13 +17,13 @@ const generateToken = (id, role) => {
 export const registerUser = async (req, res) => {
   try {
     const {
-      username, firstName, lastName, degree, birthDate,
+      username, firstName, lastName, degrees, birthDate,
       email, password, interests, bio, profilePicture, lookingForCollab, role
     } = req.body;
 
-    if (!username || !email || !password || !firstName || !lastName || !degree || !birthDate) {
-      return res.status(400).json({ message: 'Faltan campos obligatorios' });
-    }
+    if (!username || !email || !password || !firstName || !lastName || !birthDate || !degrees || degrees.length === 0) {
+  return res.status(400).json({ message: 'Faltan campos obligatorios' });
+}
 
     const parsedBirthDate = new Date(birthDate);
     if (isNaN(parsedBirthDate.getTime())) {
@@ -65,7 +65,8 @@ export const registerUser = async (req, res) => {
       username,
       firstName,
       lastName,
-      degree,
+      degrees,
+      studiesMultipleDegrees: degrees.length > 1,
       birthDate: parsedBirthDate,
       email,
       password,
@@ -245,20 +246,20 @@ export const getUserById = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Buscar por  por _id)
     const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
-    if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
-
-    // Verificar si quien hace la solicitud es el mismo usuario o un admin
     if (req.user._id.toString() !== user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'No autorizado para actualizar este usuario' });
     }
 
-    // Aplicar cambios y guardar
+    // Si llega degrees, validamos que sea array con al menos 1 id
+    if (req.body.degrees !== undefined) {
+  user.degrees = req.body.degrees; // ya es array válido gracias a Joi
+  user.studiesMultipleDegrees = req.body.degrees.length > 1;
+  delete req.body.degrees;
+}
+
     Object.assign(user, req.body);
     await user.save();
 

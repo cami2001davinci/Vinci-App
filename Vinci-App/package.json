@@ -20,6 +20,7 @@
     "react-dom": "^19.1.0",
     "react-pdf": "^10.0.1",
     "react-router-dom": "^7.6.2",
+    "socket.io-client": "^4.8.1",
     "yet-another-react-lightbox": "^3.23.4"
   },
   "devDependencies": {

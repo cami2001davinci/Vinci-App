@@ -1,6 +1,6 @@
 import express from 'express';
 import { validateBody } from '../Middleware/validate.js';
-import { userLoginSchema, userRegisterSchema } from '../validations/usersValidation.js';
+import { userLoginSchema, userRegisterSchema, userUpdateSchema  } from '../validations/usersValidation.js';
 import { protect, isAdmin } from '../Middleware/auth.js';
 import User from '../models/usersModel.js';
 import multer from 'multer';
@@ -123,7 +123,7 @@ router.get('/me/full-profile', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password')
-      .populate('degree', 'name slug')
+      .populate('degrees', 'name slug')
       .populate({
         path: 'posts',
         populate: [
@@ -154,7 +154,7 @@ router.get('/me', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password')
-      .populate('degree', 'name slug');
+      .populate('degrees', 'name slug');
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -168,8 +168,8 @@ router.get('/me', protect, async (req, res) => {
 });
 
 router.get('/:id', protect, isAdmin, getUserById);
-router.put('/:id', protect, updateUser);
 router.put('/me/notifications/mark-as-read', protect, markNotificationsAsRead);
 router.delete('/:id', protect, isAdmin, deleteUser);
+router.put('/:id', protect, validateBody(userUpdateSchema), updateUser);
 
 export default router;

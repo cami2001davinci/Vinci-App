@@ -1,2 +1,5 @@
 node_modules/
 .env
+*.cer
+*.pem
+dump-mongo-cert.js

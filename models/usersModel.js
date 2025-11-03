@@ -19,11 +19,16 @@ const userSchema = new Schema({
     type: String,
     required: true
   },
- degree: {
+ degrees: [{
   type: mongoose.Schema.Types.ObjectId,
   ref: 'Degree',
   required: true
+}],
+studiesMultipleDegrees: {
+  type: Boolean,
+  default: false
 },
+
 
   // age: {
   //   type: Number

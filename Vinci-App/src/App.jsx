@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { socket } from './services/socket';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Home from './pages/Home';
@@ -10,8 +12,36 @@ import UserProfilePage from './pages/UserProfile';
 // import ChatsPage from './pages/ChatsPage'; // Si la vas a agregar
 import AppLayout from './components/AppLayout';
 
-
 function App() {
+  useEffect(() => {
+    const onConnect = () => console.log('WS conectado:', socket.id);
+    const onDisconnect = () => console.log('WS desconectado');
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
+  // ➕ Redisparamos eventos globales para que cada PostCard se actualice
+  useEffect(() => {
+    const onPostLike = (p) =>
+      window.dispatchEvent(new CustomEvent('vinci:post-like', { detail: p }));
+    const onPostComment = (p) =>
+      window.dispatchEvent(new CustomEvent('vinci:post-comment', { detail: p }));
+
+    socket.on('post:like', onPostLike);
+    socket.on('post:comment', onPostComment);
+
+    return () => {
+      socket.off('post:like', onPostLike);
+      socket.off('post:comment', onPostComment);
+    };
+  }, []);
+
   return (
     <Router>
       <Routes>
