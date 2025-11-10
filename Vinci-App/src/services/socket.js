@@ -16,3 +16,5 @@ socket.on('connect', () => console.log('[WS] connected:', socket.id));
 socket.on('disconnect', (reason) => console.log('[WS] disconnected:', reason));
 socket.on('connect_error', (err) => console.log('[WS] connect_error:', err?.message));
 socket.on('error', (err) => console.log('[WS] error:', err));
+
+export default socket;

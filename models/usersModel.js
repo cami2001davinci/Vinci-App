@@ -104,6 +104,14 @@ studiesMultipleDegrees: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  fromUserName: { 
+    type: String, 
+    default: '' 
+  },
+  fromUserAvatar: { 
+    type: String, 
+    default: '' 
+  },
   read: {
     type: Boolean,
     default: false

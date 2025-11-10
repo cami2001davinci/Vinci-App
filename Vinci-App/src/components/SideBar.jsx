@@ -29,11 +29,24 @@ const Sidebar = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    const onInc = () => setUnreadCount((u) => u + 1); // cuando llega 'notification'
+    const onSet = (e) => setUnreadCount(e.detail.unreadCount); // cuando llega 'notifications:count'
+
+    window.addEventListener("vinci:notification", onInc);
+    window.addEventListener("vinci:notifications-count", onSet);
+
+    return () => {
+      window.removeEventListener("vinci:notification", onInc);
+      window.removeEventListener("vinci:notifications-count", onSet);
+    };
+  }, []);
+
   const fetchNotifications = async () => {
     try {
       const res = await axios.get("/users/me/notifications");
       setNotifications(res.data || []);
-      const unread = res.data.filter((notif) => !notif.read).length;
+      const unread = (res.data || []).filter((n) => !n.read).length;
       setUnreadCount(unread);
     } catch (err) {
       console.error("Error al obtener notificaciones:", err);
@@ -82,6 +95,19 @@ const Sidebar = () => {
       console.error("Error al marcar notificaciones como leídas:", err);
     }
   };
+
+  const handleNotifClick = (n) => {
+  const postId = n?.post?._id || n?.post;      // soporta objeto o string
+  if (!postId) return;
+
+  const commentId = n?.data?.commentId;        // si la noti trae commentId
+  const url = commentId
+    ? `/posts/${postId}?comment=${commentId}`
+    : `/posts/${postId}`;
+
+  navigate(url);
+  setShowDropdown(false);
+};
 
   return (
     <aside className="w-64 h-screen bg-gray-100 flex flex-col justify-between fixed">
@@ -153,10 +179,44 @@ const Sidebar = () => {
                     key={idx}
                     className={`p-2 border-bottom ${
                       n.read ? "text-muted" : "fw-bold"
-                    }`}
+                    } cursor-pointer`}
+                    onClick={() => handleNotifClick(n)}
+                    title="Ver post"
                   >
-                    <strong>{n.fromUser?.username || "Alguien"}</strong> —{" "}
-                    {n.message}
+                    <div className="d-flex align-items-center gap-2">
+                      {/* Avatar opcional */}
+                      {n.fromUserAvatar ? (
+                        <img
+                          src={
+                            n.fromUserAvatar.startsWith("http")
+                              ? n.fromUserAvatar
+                              : `${
+                                  import.meta.env.VITE_SERVER_URL ||
+                                  "http://localhost:3000"
+                                }${n.fromUserAvatar}`
+                          }
+                          alt={n.fromUserName || "Usuario"}
+                          style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: "50%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : null}
+
+                      <div>
+                        <strong>@{n.fromUserName || "usuario"}</strong> —{" "}
+                        {n.message}
+                        <div>
+                          <small className="text-muted">
+                            {new Date(
+                              n.createdAt || Date.now()
+                            ).toLocaleString()}
+                          </small>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}

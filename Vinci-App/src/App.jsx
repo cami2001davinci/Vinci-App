@@ -1,44 +1,76 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import React, { useEffect } from 'react';
-import { socket } from './services/socket';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Home from './pages/Home';
-import PrivateRoute from './routes/PrivateRoute';
-import Dashboard from './pages/Dashboard';
-import Construction from './pages/Construction';
-import DegreePage from './pages/DegreePage';
-import UserProfilePage from './pages/UserProfile';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+import React, { useEffect } from "react";
+import { socket } from "./services/socket";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Home from "./pages/Home";
+import PrivateRoute from "./routes/PrivateRoute";
+import Dashboard from "./pages/Dashboard";
+import Construction from "./pages/Construction";
+import DegreePage from "./pages/DegreePage";
+import UserProfilePage from "./pages/UserProfile";
 // import ChatsPage from './pages/ChatsPage'; // Si la vas a agregar
-import AppLayout from './components/AppLayout';
+import AppLayout from "./components/AppLayout";
+import PostPage from './pages/PostPage';
 
 function App() {
   useEffect(() => {
-    const onConnect = () => console.log('WS conectado:', socket.id);
-    const onDisconnect = () => console.log('WS desconectado');
+    const onConnect = () => console.log("WS conectado:", socket.id);
+    const onDisconnect = () => console.log("WS desconectado");
 
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
 
     return () => {
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onNotif = (n) => {
+      console.log("[WS] notification:", n);
+      // Sugerencia: disparo global para Sidebar/Badge/Dropdown
+      window.dispatchEvent(
+        new CustomEvent("vinci:notification", { detail: n })
+      );
+    };
+    const onCount = (p) => {
+      console.log("[WS] notifications:count", p);
+      window.dispatchEvent(
+        new CustomEvent("vinci:notifications-count", { detail: p })
+      );
+    };
+
+    socket.on("notification", onNotif);
+    socket.on("notifications:count", onCount);
+
+    return () => {
+      socket.off("notification", onNotif);
+      socket.off("notifications:count", onCount);
     };
   }, []);
 
   // ➕ Redisparamos eventos globales para que cada PostCard se actualice
   useEffect(() => {
     const onPostLike = (p) =>
-      window.dispatchEvent(new CustomEvent('vinci:post-like', { detail: p }));
+      window.dispatchEvent(new CustomEvent("vinci:post-like", { detail: p }));
     const onPostComment = (p) =>
-      window.dispatchEvent(new CustomEvent('vinci:post-comment', { detail: p }));
+      window.dispatchEvent(
+        new CustomEvent("vinci:post-comment", { detail: p })
+      );
 
-    socket.on('post:like', onPostLike);
-    socket.on('post:comment', onPostComment);
+    socket.on("post:like", onPostLike);
+    socket.on("post:comment", onPostComment);
 
     return () => {
-      socket.off('post:like', onPostLike);
-      socket.off('post:comment', onPostComment);
+      socket.off("post:like", onPostLike);
+      socket.off("post:comment", onPostComment);
     };
   }, []);
 
@@ -81,6 +113,17 @@ function App() {
             <PrivateRoute>
               <AppLayout>
                 <UserProfilePage />
+              </AppLayout>
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/posts/:id"
+          element={
+            <PrivateRoute>
+              <AppLayout>
+                <PostPage />
               </AppLayout>
             </PrivateRoute>
           }
@@ -130,7 +173,6 @@ function App() {
           }
         /> */}
         <Route path="" element={<Navigate to="/" />} />
-
 
         <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
       </Routes>
