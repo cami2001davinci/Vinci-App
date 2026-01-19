@@ -13,6 +13,16 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.new-posts-banner {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1050;
+  border-radius: 999px;
+  padding-inline: 1.5rem;
+}
+
 a {
   font-weight: 500;
   color: #646cff;

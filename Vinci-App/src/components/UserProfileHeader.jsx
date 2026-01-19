@@ -1,7 +1,12 @@
 import { useState } from "react";
 import axios from "../api/axiosInstance";
 
-const UserProfileHeader = ({ user }) => {
+const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+
+const getImageUrl = (url) =>
+  url?.startsWith("http") ? url : `${baseUrl}${url || ""}`;
+
+const UserProfileHeader = ({ user, isSelf = true, onStartChat }) => {
   const [uploading, setUploading] = useState(false);
   const [previewProfile, setPreviewProfile] = useState(null);
   const [previewCover, setPreviewCover] = useState(null);
@@ -13,15 +18,14 @@ const UserProfileHeader = ({ user }) => {
     bio: user.bio || "",
   });
 
-  const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
-
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+
   const handleSave = async () => {
     try {
       await axios.put("/users/me/update-profile", formData);
-      window.location.reload(); // O , actualizá el estado global sin reload
+      window.location.reload();
     } catch (error) {
       console.error("Error al actualizar perfil:", error);
       alert("Error al actualizar el perfil");
@@ -32,26 +36,23 @@ const UserProfileHeader = ({ user }) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Mostrar previsualización local
     if (type === "profilePicture") {
       setPreviewProfile(URL.createObjectURL(file));
     } else {
       setPreviewCover(URL.createObjectURL(file));
     }
 
-    const formData = new FormData();
-    formData.append(type, file);
+    const data = new FormData();
+    data.append(type, file);
     setUploading(true);
 
     try {
       await axios.put(
         `/users/me/upload-${type === "profilePicture" ? "profile" : "cover"}`,
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        }
+        data,
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
-      window.location.reload(); //  se debería actualizar el estado del usuario en vez de recargar
+      window.location.reload();
     } catch (error) {
       console.error("Error al subir la imagen:", error);
       alert("Error al subir la imagen");
@@ -62,11 +63,10 @@ const UserProfileHeader = ({ user }) => {
 
   return (
     <div className="mb-4">
-      {/* Portada */}
       <div className="position-relative mb-3">
         {previewCover || user.coverPicture ? (
           <img
-            src={previewCover || `${baseUrl}${user.coverPicture}`}
+            src={previewCover || getImageUrl(user.coverPicture)}
             alt="Portada"
             className="img-fluid rounded w-100"
             style={{ maxHeight: "300px", objectFit: "cover" }}
@@ -80,22 +80,23 @@ const UserProfileHeader = ({ user }) => {
             <p className="mb-0">Sin portada</p>
           </div>
         )}
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => handleUpload(e, "coverPicture")}
-          className="form-control position-absolute"
-          style={{ top: "10px", right: "10px", width: "200px", opacity: 0.8 }}
-          title="Cambiar portada"
-        />
+        {isSelf && (
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => handleUpload(e, "coverPicture")}
+            className="form-control position-absolute"
+            style={{ top: "10px", right: "10px", width: "200px", opacity: 0.8 }}
+            title="Cambiar portada"
+          />
+        )}
       </div>
 
-      {/* Avatar y datos */}
       <div className="d-flex align-items-center">
         <div className="me-3 position-relative">
           {previewProfile || user.profilePicture ? (
             <img
-              src={previewProfile || `${baseUrl}${user.profilePicture}`}
+              src={previewProfile || getImageUrl(user.profilePicture)}
               alt="Perfil"
               className="rounded-circle border"
               style={{ width: "100px", height: "100px", objectFit: "cover" }}
@@ -109,25 +110,27 @@ const UserProfileHeader = ({ user }) => {
               <p className="mb-0">Sin foto</p>
             </div>
           )}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => handleUpload(e, "profilePicture")}
-            className="form-control position-absolute"
-            style={{
-              top: "0",
-              left: "0",
-              width: "100px",
-              height: "100px",
-              opacity: 0,
-              cursor: "pointer",
-            }}
-            title="Cambiar foto de perfil"
-          />
+          {isSelf && (
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => handleUpload(e, "profilePicture")}
+              className="form-control position-absolute"
+              style={{
+                top: "0",
+                left: "0",
+                width: "100px",
+                height: "100px",
+                opacity: 0,
+                cursor: "pointer",
+              }}
+              title="Cambiar foto de perfil"
+            />
+          )}
         </div>
 
         <div>
-          {editing ? (
+          {isSelf && editing ? (
             <div>
               <input
                 type="text"
@@ -157,7 +160,7 @@ const UserProfileHeader = ({ user }) => {
                 name="bio"
                 value={formData.bio}
                 onChange={handleChange}
-                placeholder="Biografía"
+                placeholder="Biografia"
                 className="form-control mb-2"
               ></textarea>
 
@@ -176,21 +179,29 @@ const UserProfileHeader = ({ user }) => {
             </div>
           ) : (
             <>
-  <div className="d-flex align-items-center mb-1">
-    <h2 className="mb-0 me-2">
-      {user.firstName} {user.lastName}
-    </h2>
-    <button
-      onClick={() => setEditing(true)}
-      className="btn btn-outline-primary btn-sm"
-    >
-      Editar perfil
-    </button>
-  </div>
-  <p className="text-muted mb-1">@{user.username}</p>
-  <p>{user.bio || "Sin biografía"}</p>
-</>
-
+              <div className="d-flex align-items-center mb-1 gap-2">
+                <h2 className="mb-0">
+                  {user.firstName} {user.lastName}
+                </h2>
+                {isSelf ? (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="btn btn-outline-primary btn-sm"
+                  >
+                    Editar perfil
+                  </button>
+                ) : onStartChat ? (
+                  <button
+                    onClick={onStartChat}
+                    className="btn btn-primary btn-sm"
+                  >
+                    Enviar mensaje
+                  </button>
+                ) : null}
+              </div>
+              <p className="text-muted mb-1">@{user.username}</p>
+              <p>{user.bio || "Sin biografia"}</p>
+            </>
           )}
           {uploading && (
             <div

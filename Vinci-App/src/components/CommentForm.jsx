@@ -1,65 +1,124 @@
-import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import axios from '../api/axiosInstance';
+import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import axios from "../api/axiosInstance";
 
 const CommentForm = ({ postId, parentComment = null, onNewComment }) => {
-  const [content, setContent] = useState('');
-  const [error, setError] = useState('');
+  const [content, setContent] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (isSubmitting) return;
+
     if (!postId) {
-      console.error('Falta postId en CommentForm');
-      setError('Error interno: falta ID del post');
+      console.error("Falta postId en CommentForm");
+      setError("Error interno: falta ID del post");
       return;
     }
 
-    if (!content.trim() || content.trim().length < 3) {
-      setError('El comentario debe tener al menos 3 caracteres.');
+    if (!user) {
+      setError("Tenés que iniciar sesión para comentar.");
       return;
     }
+
+    const trimmed = content.trim();
+    if (!trimmed) {
+      setError("El comentario no puede estar vacío.");
+      return;
+    }
+
+    setError("");
+    setIsSubmitting(true);
 
     try {
-      await axios.post('/comments', {
-        content: content.trim(),
+      const payload = {
+        content: trimmed,
         postId,
-        ...(parentComment && { parentComment })
-      });
-      setContent('');
-      setError('');
-      onNewComment?.();
+      };
+      if (parentComment) {
+        payload.parentComment = parentComment;
+      }
+
+      // ✅ ahora guardamos la respuesta
+      const { data: newComment } = await axios.post("/comments", payload);
+
+      // limpiamos el textarea
+      setContent("");
+
+      // callback local (PostPage / PostCard)
+      if (typeof onNewComment === "function") {
+        onNewComment(newComment);
+      }
+
+      // ✅ evento global para que cualquier PostCard actualice el contador
+      window.dispatchEvent(
+        new CustomEvent("vinci:post-comment", {
+          detail: {
+            postId,
+            newComment, // 👈 acá va el comentario completo, NO solo el id
+          },
+        })
+      );
     } catch (err) {
-      console.error('Error al enviar comentario:', err);
-      setError(err.response?.data?.message || 'No se pudo enviar el comentario.');
+      console.error("Error al enviar comentario:", err);
+      const msg =
+        err?.response?.data?.message ||
+        "No se pudo publicar el comentario. Intentá de nuevo.";
+      setError(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const baseUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+  // Avatar del usuario como en Facebook
+  const avatarSrc = user?.profilePicture
+    ? `${import.meta.env.VITE_SERVER_URL || "http://localhost:3000"}${
+        user.profilePicture
+      }`
+    : "/default-avatar.png";
 
   return (
     <form onSubmit={handleSubmit} className="mt-2">
-      <div className="flex items-center gap-2 mb-2">
-        <img
-          src={user?.profilePicture ? `${baseUrl}${user.profilePicture}` : '/default-avatar.png'}
-          alt="avatar"
-          className="rounded-circle"
-          style={{ width: '30px', height: '30px', objectFit: 'cover' }}
-        />
-        <span className="text-sm text-muted">Comentando como @{user?.username}</span>
-      </div>
+      {error && <p className="text-danger small mb-1">{error}</p>}
 
-      {error && <div className="text-red-500 text-sm mb-1">{error}</div>}
-      <input
-        value={content}
-        onChange={e => setContent(e.target.value)}
-        placeholder="Escribe una respuesta"
-        className="w-full border p-1 rounded mb-1"
-      />
-      <button type="submit" className="text-sm text-white btn btn-primary bg-blue-500 px-3 py-1 rounded">
-        Comentar
-      </button>
+      <div className="d-flex align-items-start gap-2">
+        {/* Avatar del usuario logueado */}
+        <img
+          src={avatarSrc}
+          alt={user?.username || "Usuario"}
+          className="rounded-circle"
+          style={{
+            width: "32px",
+            height: "32px",
+            objectFit: "cover",
+          }}
+        />
+
+        <div className="flex-grow-1">
+          <input
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={
+              parentComment
+                ? "Responder a este comentario..."
+                : "Escribe un comentario..."
+            }
+            className="w-100 border p-2 rounded mb-1 form-control"
+            disabled={isSubmitting}
+          />
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm"
+            disabled={isSubmitting || !content.trim()}
+          >
+            {isSubmitting ? "Publicando..." : "Comentar"}
+          </button>
+        </div>
+      </div>
     </form>
   );
 };

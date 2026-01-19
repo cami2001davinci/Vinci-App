@@ -1,0 +1,287 @@
+/* =========================
+   WELCOME PAGE (mobile / tablet)
+   ========================== */
+
+/* Oculto por defecto (se activa solo con media queries) */
+.welcome-page {
+  display: none;
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background-color: #000; /* fallback mientras carga el patrón */
+  font-family: "degular", sans-serif;
+}
+
+/* Fondo con el patrón colorido (última imagen que adjuntaste) */
+.welcome-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url("/img/pattern-vinci.png"); /* 👈 cambia la ruta/archivo */
+  background-size: cover;
+  background-position: center;
+  background-repeat: repeat;
+  transform: scale(1.05);
+}
+
+/* Panel blanco que flota sobre el fondo */
+/* Panel blanco tipo "nube" */
+.welcome-panel {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  width: min(90%, 420px);
+  padding: 2.75rem 2.25rem 2.5rem;
+  border-radius: 1.75rem;
+  background-color: #ffffff;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.25);
+  text-align: center;
+
+  /* Estado inicial: nube apagada */
+  opacity: 0;
+  transform: scale(0.8) translateY(40px);
+  filter: blur(10px);
+}
+
+/* Cuando React agrega esta clase, se dispara la animación de nube */
+.welcome-panel--visible {
+  animation: cloudIn 0.75s ease forwards;
+}
+
+/* Logo original sin contenedor, pero ahora animable */
+.welcome-logo {
+  width: 95px;
+  height: auto;
+  margin: 0 auto 1.2rem auto;
+  display: block;
+
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* Texto y botones: empiezan ocultos */
+.welcome-title,
+.welcome-subtitle,
+.welcome-actions {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Orden de aparición: logo → título → texto → botones */
+.welcome-panel--visible .welcome-logo {
+  animation: fadeUp 0.45s ease forwards;
+  animation-delay: 0.35s;
+}
+
+.welcome-panel--visible .welcome-title {
+  animation: fadeUp 0.45s ease forwards;
+  animation-delay: 0.55s;
+}
+
+.welcome-panel--visible .welcome-subtitle {
+  animation: fadeUp 0.45s ease forwards;
+  animation-delay: 0.8s;
+}
+
+.welcome-panel--visible .welcome-actions {
+  animation: fadeUp 0.45s ease forwards;
+  animation-delay: 1.05s;
+}
+
+/* ====== KEYFRAMES ====== */
+
+/* Nube blanca que aparece y se asienta */
+@keyframes cloudIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(40px);
+    filter: blur(12px);
+    border-radius: 999px; /* bien nube al inicio */
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.03) translateY(0);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+    border-radius: 1.75rem; /* vuelve a tu panel normal */
+  }
+}
+
+/* Palabras y elementos que suben suave y aparecen */
+@keyframes fadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* --------- Responsivo: solo se ve en mobile / tablet --------- */
+
+/* Mobile + Tablet */
+@media (max-width: 1024px) {
+  .welcome-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.75rem 1.25rem;
+  }
+}
+
+/* En desktop podrías directamente no usar esta ruta,
+   pero por si acaso la dejamos oculta */
+@media (min-width: 1025px) {
+  .welcome-page {
+    display: none;
+  }
+}
+
+/* =========================
+   WELCOME PAGE (mobile / tablet)
+   ========================== */
+
+.welcome-page {
+  display: none; /* se activa solo con media queries */
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background-color: #000;
+  font-family: "degular", sans-serif;
+}
+
+/* Fondo con el patrón colorido: C:\Vinci-App\Vinci-App\public\img\fondo-5.svg */
+.welcome-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url("/img/fondo-5.svg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: repeat;
+  transform: scale(1.05);
+}
+
+/* Panel blanco flotante tipo MiraiApp */
+.welcome-panel {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  width: min(90%, 420px);
+  padding: 2.75rem 2.25rem 2.5rem;
+  border-radius: 1.75rem;
+  background-color: #ffffff;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.25);
+  text-align: center;
+
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+/* Estado visible (se setea desde React) */
+.welcome-panel--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Logo estilo “tarjetita” */
+.welcome-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.welcome-logo img {
+  width: 72px;
+  height: 72px;
+  border-radius: 24px;
+  padding: 0.6rem;
+  background: #f5f2ff;
+  box-shadow: 0 8px 20px rgba(108, 99, 255, 0.25);
+}
+
+/* Títulos y texto */
+.welcome-title {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+  color: #222222;
+}
+
+.welcome-subtitle {
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #555555;
+  margin-bottom: 1.9rem;
+}
+
+/* Botones */
+.welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.welcome-btn {
+  border-radius: 999px;
+  padding: 0.85rem 1.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+/* Botón principal violeta */
+.welcome-btn--primary {
+  background: #6c63ff;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(108, 99, 255, 0.45);
+}
+
+.welcome-btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(108, 99, 255, 0.55);
+}
+
+/* Botón secundario borde violeta */
+.welcome-btn--secondary {
+  background: #ffffff;
+  color: #6c63ff;
+  border: 1.5px solid #6c63ff;
+}
+
+.welcome-btn--secondary:hover {
+  background: #f2f0ff;
+}
+
+/* --------- Responsivo: solo visible en mobile / tablet --------- */
+
+/* Mobile + Tablet */
+@media (max-width: 1024px) {
+  .welcome-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.75rem 1.25rem;
+  }
+}
+
+/* En desktop la ruta existe pero no se ve (queda oculto) */
+@media (min-width: 1025px) {
+  .welcome-page {
+    display: none;
+  }
+}
+
+

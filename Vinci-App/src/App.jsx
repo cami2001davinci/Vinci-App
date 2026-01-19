@@ -1,3 +1,4 @@
+// src/App.jsx
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,6 +7,7 @@ import {
 } from "react-router-dom";
 import React, { useEffect } from "react";
 import { socket } from "./services/socket";
+
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
@@ -14,14 +16,24 @@ import Dashboard from "./pages/Dashboard";
 import Construction from "./pages/Construction";
 import DegreePage from "./pages/DegreePage";
 import UserProfilePage from "./pages/UserProfile";
-// import ChatsPage from './pages/ChatsPage'; // Si la vas a agregar
+import ChatsPage from "./pages/ChatsPage";
 import AppLayout from "./components/AppLayout";
-import PostPage from './pages/PostPage';
+import PostPage from "./pages/PostPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import NotificationBridge from "./components/NotificationBridge";
+import Welcome from "./pages/Welcome";
+import SearchPage from "./pages/SearchPage";
 
 function App() {
+  // Logs básicos de conexión/desconexión
   useEffect(() => {
-    const onConnect = () => console.log("WS conectado:", socket.id);
-    const onDisconnect = () => console.log("WS desconectado");
+    const onConnect = () => {
+      console.log("WS conectado:", socket.id);
+    };
+
+    const onDisconnect = (reason) => {
+      console.log("WS desconectado. Motivo:", reason);
+    };
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
@@ -32,52 +44,49 @@ function App() {
     };
   }, []);
 
+  // Escucha eventos del socket y los reexpone a la app
   useEffect(() => {
-    const onNotif = (n) => {
-      console.log("[WS] notification:", n);
-      // Sugerencia: disparo global para Sidebar/Badge/Dropdown
-      window.dispatchEvent(
-        new CustomEvent("vinci:notification", { detail: n })
-      );
-    };
-    const onCount = (p) => {
-      console.log("[WS] notifications:count", p);
-      window.dispatchEvent(
-        new CustomEvent("vinci:notifications-count", { detail: p })
-      );
-    };
+    if (!socket) return;
 
-    socket.on("notification", onNotif);
-    socket.on("notifications:count", onCount);
+    const notify = (payload) =>
+      window.dispatchEvent(
+        new CustomEvent("vinci:notification", { detail: payload })
+      );
+    const chatMsg = (payload) =>
+      window.dispatchEvent(
+        new CustomEvent("vinci:chat-message", { detail: payload })
+      );
+    const collabReq = (payload) =>
+      window.dispatchEvent(
+        new CustomEvent("vinci:collab-request", { detail: payload })
+      );
+
+    socket.on("notification", notify);
+    socket.on("notification:new", notify);
+    socket.on("post:liked", notify);
+    socket.on("comment:liked", notify);
+    socket.on("comment:replied", notify);
+    socket.on("chat:message", chatMsg);
+    socket.on("collab:request", collabReq);
 
     return () => {
-      socket.off("notification", onNotif);
-      socket.off("notifications:count", onCount);
-    };
-  }, []);
-
-  // ➕ Redisparamos eventos globales para que cada PostCard se actualice
-  useEffect(() => {
-    const onPostLike = (p) =>
-      window.dispatchEvent(new CustomEvent("vinci:post-like", { detail: p }));
-    const onPostComment = (p) =>
-      window.dispatchEvent(
-        new CustomEvent("vinci:post-comment", { detail: p })
-      );
-
-    socket.on("post:like", onPostLike);
-    socket.on("post:comment", onPostComment);
-
-    return () => {
-      socket.off("post:like", onPostLike);
-      socket.off("post:comment", onPostComment);
+      socket.off("notification", notify);
+      socket.off("notification:new", notify);
+      socket.off("post:liked", notify);
+      socket.off("comment:liked", notify);
+      socket.off("comment:replied", notify);
+      socket.off("chat:message", chatMsg);
+      socket.off("collab:request", collabReq);
     };
   }, []);
 
   return (
     <Router>
+      {/* Bridge global para reproducir sonido cuando llega "vinci:notification" */}
+      <NotificationBridge />
+
       <Routes>
-        {/* Rutas públicas con Navbar */}
+        {/* Rutas públicas */}
         <Route
           path="/login"
           element={
@@ -95,7 +104,9 @@ function App() {
           }
         />
 
-        {/* Rutas protegidas con Sidebar persistente */}
+        <Route path="/welcome" element={<Welcome />} />
+
+        {/* Rutas protegidas con layout principal */}
         <Route
           path="/"
           element={
@@ -152,6 +163,17 @@ function App() {
         />
 
         <Route
+          path="/notifications"
+          element={
+            <PrivateRoute>
+              <AppLayout>
+                <NotificationsPage />
+              </AppLayout>
+            </PrivateRoute>
+          }
+        />
+
+        <Route
           path="/construction"
           element={
             <PrivateRoute>
@@ -162,7 +184,7 @@ function App() {
           }
         />
 
-        {/* <Route
+        <Route
           path="/chats"
           element={
             <PrivateRoute>
@@ -171,9 +193,24 @@ function App() {
               </AppLayout>
             </PrivateRoute>
           }
-        /> */}
-        <Route path="" element={<Navigate to="/" />} />
+        />
 
+        <Route
+  path="/search"
+  element={
+    <PrivateRoute>
+      <AppLayout>
+        <SearchPage />
+      </AppLayout>
+    </PrivateRoute>
+  }
+/>
+
+        {/* Redirección vacía a "/" */}
+        {/* Redirección vacía a la pantalla de bienvenida */}
+        <Route path="" element={<Navigate to="/welcome" />} />
+
+        {/* 404 */}
         <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
       </Routes>
     </Router>

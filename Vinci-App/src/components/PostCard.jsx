@@ -1,355 +1,348 @@
-import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+﻿// src/components/PostCard.jsx
+import { useState, useEffect } from "react";
 import axios from "../api/axiosInstance";
-import CommentsList from "./CommentsList";
 import CommentForm from "./CommentForm";
-import Lightbox from "yet-another-react-lightbox";
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min?url";
-import { socket } from "../services/socket"; // 👈
+import CommentsList from "./CommentsList";
+import PostContent from "./PostContent";
+import { CommentCountStore } from "../store/commentCountStore.js";
+import { useAuth } from "../context/AuthContext";
+import CollabActions from "./CollabActions";
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-
-const PostCard = ({ post, onPostChanged, readOnly = false }) => {
+export default function PostCardView({ post, onPostChanged }) {
+  const { user } = useAuth();
+  const [postData, setPostData] = useState(post);
+  const [likes, setLikes] = useState(post?.likedBy?.length || 0);
   const [showComments, setShowComments] = useState(false);
-  const [likes, setLikes] = useState(post.likedBy?.length || 0);
+  const [commentsVersion, setCommentsVersion] = useState(0);
+  const [commentsCount, setCommentsCount] = useState(() => {
+    const fromStore = CommentCountStore.getCount(post?._id);
+    if (fromStore) return fromStore;
+    if (Array.isArray(post?.comments)) return post.comments.length;
+    if (typeof post?.commentsCount === "number") return post.commentsCount;
+    return 0;
+  });
   const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState(post.content || "");
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [photoIndex, setPhotoIndex] = useState(0);
-  const [showMenu, setShowMenu] = useState(false);
-  const [commentsBump, setCommentsBump] = useState(0); // 👈 para forzar refetch en CommentsList
-  const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
-  const isOpeningLightbox = useRef(false);
+  const [formValues, setFormValues] = useState({
+    title: post?.title || "",
+    content: post?.content || "",
+    category: post?.category || "comunidad",
+  });
+  const [actionError, setActionError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
-  // 🔗 unir al room del post mientras la tarjeta viva (para broadcasts por post)
-  useEffect(() => {
-    if (!post?._id) return;
-    socket.emit("post:join", post._id);
-    return () => socket.emit("post:leave", post._id);
-  }, [post?._id]);
+  const postId = postData?._id || post?._id;
 
-  // 🔔 actualizar likes del post cuando llegue un evento global
   useEffect(() => {
-    const likeHandler = (e) => {
-      const { postId, likesCount } = e.detail || {};
-      if (postId === post._id) {
-        setLikes(likesCount);
-      }
+    setPostData(post);
+  }, [post]);
+
+  useEffect(() => {
+    setLikes(postData?.likedBy?.length || 0);
+    setFormValues({
+      title: postData?.title || "",
+      content: postData?.content || "",
+      category: postData?.category || "comunidad",
+    });
+  }, [postData]);
+
+  useEffect(() => {
+    if (!postId) return;
+    const fallback = Array.isArray(postData?.comments)
+      ? postData.comments.length
+      : typeof postData?.commentsCount === "number"
+      ? postData.commentsCount
+      : 0;
+    setCommentsCount(fallback);
+  }, [postId, postData?.comments, postData?.commentsCount]);
+
+  useEffect(() => {
+    if (!postId) return;
+    CommentCountStore.subscribe(postId, setCommentsCount);
+    return () => {
+      CommentCountStore.unsubscribe(postId, setCommentsCount);
     };
-    window.addEventListener("vinci:post-like", likeHandler);
-    return () => window.removeEventListener("vinci:post-like", likeHandler);
-  }, [post._id]);
+  }, [postId]);
 
-  // 💬 actualizar lista/contador de comentarios en vivo
-  useEffect(() => {
-    const commentHandler = (e) => {
-      const { postId } = e.detail || {};
-      if (postId === post._id) {
-        // opción A: forzar CommentsList a refetchear (key)
-        setCommentsBump((x) => x + 1);
-        // opción B: si querés, podrías inyectar el comment e incrementar contador local
-      }
-    };
-    window.addEventListener("vinci:post-comment", commentHandler);
-    return () =>
-      window.removeEventListener("vinci:post-comment", commentHandler);
-  }, [post._id]);
+  const currentUserId = user?._id || user?.id;
+  const rawAuthor = postData?.author;
+  const authorId =
+    typeof rawAuthor === "object" && rawAuthor !== null
+      ? rawAuthor._id || rawAuthor.id
+      : rawAuthor;
+  const isAuthor =
+    !!currentUserId &&
+    !!authorId &&
+    currentUserId.toString() === authorId.toString();
 
-  const authorDegrees = Array.isArray(post.author?.degrees)
-    ? post.author.degrees
-    : [];
-
-  const first = post.author?.firstName || "";
-  const last = post.author?.lastName || "";
-  const username = post.author?.username || "usuario";
-
-  const isFavicon = (url) =>
-    typeof url === "string" && url.includes("google.com/s2/favicons");
-  const heroImageCandidate = post.links?.find((l) => l?.preview?.image)?.preview
-    ?.image;
-  const heroImage =
-    heroImageCandidate && !isFavicon(heroImageCandidate)
-      ? heroImageCandidate
-      : null;
+  const collabClosed = postData?.collabStatus === "team_chosen";
+  const selectedNames = (postData?.selectedCollaborators || [])
+    .map((u) => u?.username)
+    .filter(Boolean);
 
   const toggleLike = async () => {
+    if (!postId) return;
     try {
-      // PUT o POST según tu router; vos tenías PUT, lo mantengo
-      const res = await axios.put(`/posts/${post._id}/like`);
-      setLikes(res.data.likesCount); // reflejo inmediato para quien clickeó
+      const res = await axios.put(`/posts/${postId}/like`);
+      setLikes(res.data.likesCount);
     } catch (error) {
-      console.error("Error al dar like al post:", error);
+      console.error("Error al dar like:", error);
     }
   };
 
-  const handleUpdate = async () => {
+  useEffect(() => {
+    if (!postId) return;
+    const handlePostLike = (e) => {
+      const { postId: updatedId, likesCount } = e.detail || {};
+      if (updatedId === postId) {
+        setLikes(likesCount);
+      }
+    };
+
+    window.addEventListener("vinci:post-like", handlePostLike);
+    return () => {
+      window.removeEventListener("vinci:post-like", handlePostLike);
+    };
+  }, [postId]);
+
+  const handleFieldChange = (evt) => {
+    const { name, value } = evt.target;
+    setFormValues((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setActionError("");
+    setFormValues({
+      title: postData?.title || "",
+      content: postData?.content || "",
+      category: postData?.category || "comunidad",
+    });
+  };
+
+  const handleEditSubmit = async (evt) => {
+    evt.preventDefault();
+    if (!postId) return;
+
+    const payload = {
+      title: formValues.title.trim(),
+      content: formValues.content.trim(),
+      category: formValues.category,
+    };
+
+    if (!payload.title) {
+      setActionError("El titulo es obligatorio.");
+      return;
+    }
+    if (!payload.content || payload.content.length < 10) {
+      setActionError("La descripcion debe tener al menos 10 caracteres.");
+      return;
+    }
+
+    setSaving(true);
+    setActionError("");
     try {
-      await axios.put(`/posts/${post._id}`, { content: editedContent });
-      post.content = editedContent;
+      const { data } = await axios.put(`/posts/${postId}`, payload);
+      setPostData(data);
       setIsEditing(false);
-      onPostChanged?.();
+      window.dispatchEvent(
+        new CustomEvent("vinci:post-updated", { detail: { post: data } })
+      );
+      onPostChanged?.("update", data._id);
     } catch (err) {
-      console.error("Error al editar post:", err);
+      const apiMsg = err.response?.data?.message;
+      setActionError(apiMsg || "No se pudo actualizar el post.");
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("¿Eliminar este posteo?")) return;
+    if (!postId) return;
+    if (!window.confirm("Eliminar este post?")) return;
+
+    setRemoving(true);
+    setActionError("");
     try {
-      await axios.delete(`/posts/${post._id}`);
-      onPostChanged?.();
+      await axios.delete(`/posts/${postId}`);
+      window.dispatchEvent(
+        new CustomEvent("vinci:post-deleted", {
+          detail: {
+            postId,
+            degreeSlug: postData?.degree?.slug,
+          },
+        })
+      );
+      setHidden(true);
+      onPostChanged?.("delete", postId);
     } catch (err) {
-      console.error("Error al eliminar posteo:", err);
+      const apiMsg = err.response?.data?.message;
+      setActionError(apiMsg || "No se pudo eliminar el post.");
+    } finally {
+      setRemoving(false);
     }
   };
 
-  const openLightbox = (index) => {
-    if (lightboxOpen || isOpeningLightbox.current) return;
-    isOpeningLightbox.current = true;
-    setPhotoIndex(index);
-    setLightboxOpen(true);
-    setTimeout(() => {
-      isOpeningLightbox.current = false;
-    }, 300);
-  };
+  if (hidden) return null;
+
+  const renderActions = () => (
+    <div className="position-relative">
+      <button
+        type="button"
+        className="btn btn-light btn-sm d-inline-flex align-items-center"
+        onClick={() => setShowActions((prev) => !prev)}
+      >
+        <i className="bi bi-three-dots-vertical" />
+      </button>
+
+      {showActions && (
+        <div
+          className="dropdown-menu show p-2 shadow-sm"
+          style={{
+            right: 0,
+            top: "100%",
+            zIndex: 1100,
+            position: "absolute",
+            minWidth: 170,
+          }}
+        >
+          {!isEditing && (
+            <button
+              type="button"
+              className="dropdown-item d-flex align-items-center gap-2"
+              onClick={() => {
+                setIsEditing(true);
+                setActionError("");
+                setShowActions(false);
+              }}
+            >
+              <i className="bi bi-pencil" /> Editar
+            </button>
+          )}
+          <button
+            type="button"
+            className="dropdown-item text-danger d-flex align-items-center gap-2"
+            onClick={() => {
+              setShowActions(false);
+              handleDelete();
+            }}
+            disabled={removing}
+          >
+            <i className="bi bi-trash" />
+            {removing ? "Eliminando..." : "Eliminar"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="card mb-3 shadow-sm">
-      {heroImage && (
-        <img
-          src={heroImage}
-          alt=""
-          className="mb-2 rounded"
-          style={{ width: "100%", maxHeight: 360, objectFit: "cover" }}
-          loading="lazy"
-        />
-      )}
-
-      <div className="card-body">
-        <div className="d-flex align-items-center mb-2 position-relative">
-          <img
-            src={
-              post.author?.profilePicture
-                ? `${baseUrl}${post.author.profilePicture}`
-                : "/default-avatar.png"
-            }
-            alt="avatar"
-            className="rounded-circle me-2"
-            style={{ width: 50, height: 50, objectFit: "cover" }}
-          />
-          <div>
-            <strong>{`${first} ${last}`.trim() || username}</strong> @{username}
-            <br />
-            {authorDegrees.length > 0 && (
-              <small className="text-muted">
-                Estudia:{" "}
-                {authorDegrees.map((d, i) => (
-                  <span key={d?.slug || i}>
-                    <Link
-                      to={`/degrees/${d?.slug}`}
-                      className="text-decoration-none text-muted"
-                    >
-                      {d?.name}
-                    </Link>
-                    {i < authorDegrees.length - 1 ? " · " : ""}
-                  </span>
-                ))}
-              </small>
-            )}
-            <br />
-            <small className="text-muted">
-              {new Date(post.createdAt).toLocaleString()}
-            </small>
+      <div className="card-body position-relative">
+        {isAuthor && isEditing && (
+          <div
+            className="position-absolute"
+            style={{ top: 8, right: 8 }}
+          >
+            {renderActions()}
           </div>
+        )}
 
-          {!readOnly && (
-            <div className="position-absolute top-0 end-0">
-              <button
-                onClick={() => setShowMenu((p) => !p)}
-                className="btn btn-sm btn-light"
-              >
-                <i className="bi bi-three-dots" />
-              </button>
-              {showMenu && (
-                <div
-                  className="border rounded bg-white p-2 position-absolute"
-                  style={{ right: 0, zIndex: 1000 }}
-                >
-                  <button
-                    className="dropdown-item"
-                    onClick={() => {
-                      setIsEditing(true);
-                      setShowMenu(false);
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button
-                    className="dropdown-item text-danger"
-                    onClick={() => {
-                      handleDelete();
-                      setShowMenu(false);
-                    }}
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {actionError && <p className="text-danger small mb-2">{actionError}</p>}
 
         {isEditing ? (
-          <>
-            <textarea
-              className="form-control mt-2"
-              value={editedContent}
-              onChange={(e) => setEditedContent(e.target.value)}
+          <form onSubmit={handleEditSubmit} className="mb-3">
+            <input
+              className="form-control mb-2"
+              name="title"
+              value={formValues.title}
+              placeholder="Titulo"
+              onChange={handleFieldChange}
+              disabled={saving}
             />
-            <div className="d-flex gap-2 mt-2">
-              <button onClick={handleUpdate} className="btn btn-success btn-sm">
-                Guardar
-              </button>
+            <textarea
+              className="form-control mb-2"
+              name="content"
+              rows={4}
+              value={formValues.content}
+              placeholder="Describe tu publicacion"
+              onChange={handleFieldChange}
+              disabled={saving}
+            />
+            <select
+              className="form-select w-auto mb-3"
+              name="category"
+              value={formValues.category}
+              onChange={handleFieldChange}
+              disabled={saving}
+            >
+              <option value="comunidad">Comunidad</option>
+              <option value="colaboradores">Colaboradores</option>
+              <option value="ayuda">Ayuda</option>
+              <option value="feedback">Feedback</option>
+              <option value="ideas">Ideas</option>
+            </select>
+            <div className="d-flex gap-2 justify-content-end">
               <button
-                onClick={() => setIsEditing(false)}
-                className="btn btn-secondary btn-sm"
+                type="button"
+                className="btn btn-light btn-sm"
+                onClick={handleCancelEdit}
+                disabled={saving}
               >
                 Cancelar
               </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {post.title && <h5 className="mt-2 mb-1">{post.title}</h5>}
-            <p className="mt-2">{post.content}</p>
-          </>
-        )}
-
-        {Array.isArray(post.images) && post.images.length > 0 && (
-          <div className="mt-3 d-flex flex-wrap gap-2">
-            {post.images.map((imgUrl, index) => (
-              <img
-                key={index}
-                src={`${baseUrl}${imgUrl}`}
-                alt={`imagen-${index}`}
-                className="rounded cursor-pointer border"
-                style={{ width: 120, height: 120, objectFit: "cover" }}
-                onClick={() => openLightbox(index)}
-              />
-            ))}
-          </div>
-        )}
-
-        {Array.isArray(post.documents) && post.documents.length > 0 && (
-          <div className="mt-3">
-            <strong>Documentos:</strong>
-            <div className="d-flex flex-wrap gap-2 mt-2">
-              {post.documents.map((docUrl, idx) => {
-                const fileName = docUrl.split("/").pop();
-                const ext = fileName.split(".").pop().toLowerCase();
-                if (ext === "pdf") {
-                  return (
-                    <div
-                      key={idx}
-                      className="border rounded p-2 text-center"
-                      style={{ width: 150, height: 210, overflow: "hidden" }}
-                    >
-                      <Document
-                        file={`${baseUrl}${docUrl}`}
-                        onLoadError={(err) =>
-                          console.error("Error al cargar PDF:", err)
-                        }
-                      >
-                        <Page pageNumber={1} width={130} />
-                      </Document>
-                      <a
-                        href={`${baseUrl}${docUrl}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="small d-block mt-1 text-primary"
-                      >
-                        {fileName}
-                      </a>
-                    </div>
-                  );
-                }
-                return (
-                  <a
-                    key={idx}
-                    href={`${baseUrl}${docUrl}`}
-                    download={fileName}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="border rounded px-2 py-1 d-flex align-items-center"
-                    title={fileName}
-                  >
-                    <span className="text-truncate" style={{ maxWidth: 150 }}>
-                      {fileName}
-                    </span>
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {Array.isArray(post.links) && post.links.length > 0 && (
-          <div className="mt-2 d-flex flex-wrap gap-2">
-            {post.links.map((l, i) => (
-              <a
-                key={i}
-                href={l.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-sm btn-outline-primary"
+              <button
+                type="submit"
+                className="btn btn-success btn-sm"
+                disabled={saving}
               >
-                <i className="bi bi-link-45deg" /> {l.provider || "Link"}
-              </a>
-            ))}
-          </div>
-        )}
-
-        {lightboxOpen && Array.isArray(post.images) && post.images.length > 0 && (
-          <Lightbox
-            open={lightboxOpen}
-            close={() => setLightboxOpen(false)}
-            index={photoIndex}
-            slides={post.images.map((imgUrl) => ({
-              src: `${baseUrl}${imgUrl}`,
-            }))}
-            on={{ view: ({ index }) => setPhotoIndex(index) }}
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <PostContent
+            post={postData}
+            actionsSlot={isAuthor ? renderActions() : null}
           />
         )}
 
-        {!readOnly && !isEditing && (
-          <div className="d-flex gap-2 mt-3">
-            <button onClick={toggleLike} className="btn btn-light btn-sm">
-              <i className="bi bi-hand-thumbs-up" /> Me gusta ({likes})
-            </button>
-            <button
-              onClick={() => setShowComments((prev) => !prev)}
-              className="btn btn-light btn-sm"
-            >
-              <i className="bi bi-chat" /> {showComments ? "Ocultar" : "Comentar"}
-            </button>
+        {collabClosed && selectedNames.length > 0 && (
+          <div className="small text-success mt-2">
+            <strong>Trabajando con:</strong> {selectedNames.join(" ? ")}
           </div>
         )}
 
-        {showComments && !readOnly && (
-          <div className="mt-2">
+        <CollabActions post={postData} onPostUpdate={setPostData} />
+
+        <div className="d-flex gap-2 mt-3">
+          <button onClick={toggleLike} className="btn btn-light btn-sm">
+            <i className="bi bi-hand-thumbs-up" /> Me gusta ({likes})
+          </button>
+
+          <button
+            onClick={() => setShowComments((prev) => !prev)}
+            className="btn btn-light btn-sm"
+          >
+            <i className="bi bi-chat" /> Comentarios ({commentsCount})
+          </button>
+        </div>
+
+        {showComments && postId && (
+          <div className="mt-3">
             <CommentForm
-              postId={post._id}
-              onNewComment={() => setCommentsBump((x) => x + 1)}
+              postId={postId}
+              onNewComment={() => {
+                setCommentsVersion((x) => x + 1);
+              }}
             />
-            <CommentsList postId={post._id} key={commentsBump} />
+
+            <CommentsList postId={postId} key={`${postId}-${commentsVersion}`} />
           </div>
         )}
       </div>
     </div>
   );
-};
-
-export default PostCard;
+}
