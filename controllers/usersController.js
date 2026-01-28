@@ -1,6 +1,7 @@
 import User from '../models/usersModel.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs'; // <-- necesario para login
+import { getNotificationCounts } from '../src/utils/notificationCounts.js';
 
 
 
@@ -141,6 +142,24 @@ export const loginUser = async (req, res) => {
   } catch (err) {
     console.error('Error en login:', err);
     res.status(500).json({ message: 'Error en el servidor', error: err.message });
+  }
+};
+
+export const getPublicProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id)
+      .select("username firstName lastName bio profilePicture coverPicture degrees")
+      .populate("degrees", "name slug");
+
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error("Error al obtener perfil publico:", err);
+    res.status(500).json({ message: "Error al obtener el perfil" });
   }
 };
 
@@ -302,13 +321,20 @@ export const deleteUser = async (req, res) => {
 export const getMyNotifications = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('notifications')
+      .select('notifications notificationsLastOpenedAt')
       .populate('notifications.post', 'content')
       .populate('notifications.fromUser', 'username');
 
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
-    res.json(user.notifications.reverse()); // más recientes primero
+    const notifications = user.notifications.slice().reverse(); // mas recientes primero
+    const counts = getNotificationCounts(user);
+
+    res.json({
+      notifications,
+      ...counts,
+      lastOpenedAt: user.notificationsLastOpenedAt || null,
+    });
   } catch (error) {
     console.error('Error al obtener notificaciones:', error);
     res.status(500).json({ message: 'Error del servidor' });
@@ -320,15 +346,106 @@ export const markNotificationsAsRead = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
 
-    user.notifications.forEach(notif => {
+    user.notifications.forEach((notif) => {
       notif.read = true;
     });
+    user.notificationsLastOpenedAt = new Date();
 
     await user.save();
 
-    res.json({ message: 'Notificaciones marcadas como leídas' });
+    const counts = getNotificationCounts(user);
+
+    try {
+      const { emitToUser } = await import('../src/utils/realtime.js');
+      emitToUser(user._id, 'notifications:count', counts);
+    } catch (err) {
+      console.error('Error emitiendo notifications:count:', err);
+    }
+
+    res.json({
+      message: 'Notificaciones marcadas como leidas',
+      ...counts,
+      lastOpenedAt: user.notificationsLastOpenedAt,
+    });
   } catch (error) {
     console.error('Error al marcar notificaciones:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+export const acknowledgeNotifications = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select(
+      'notifications notificationsLastOpenedAt'
+    );
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    user.notificationsLastOpenedAt = new Date();
+    await user.save();
+
+    const counts = getNotificationCounts(user);
+
+    try {
+      const { emitToUser } = await import('../src/utils/realtime.js');
+      emitToUser(user._id, 'notifications:count', counts);
+    } catch (err) {
+      console.error('Error emitiendo notifications:count:', err);
+    }
+
+    res.json({
+      message: 'Notificaciones vistas',
+      ...counts,
+      lastOpenedAt: user.notificationsLastOpenedAt,
+    });
+  } catch (error) {
+    console.error('Error al registrar apertura de notificaciones:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+/**
+ * Marca una notificacion individual como leida y devuelve el contador actualizado.
+ *
+ * @param {import('express').Request} req - Request con params.notificationId.
+ * @param {import('express').Response} res - Response HTTP.
+ * @returns {Promise<void>} Respuesta JSON con la notificacion actualizada.
+ */
+export const markNotificationAsRead = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+
+    const user = await User.findById(req.user._id).select('notifications notificationsLastOpenedAt');
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const notification = user.notifications.id(notificationId);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notificacion no encontrada' });
+    }
+
+    if (!notification.read) {
+      notification.read = true;
+    }
+
+    await user.save();
+
+    const counts = getNotificationCounts(user);
+
+    try {
+      const { emitToUser } = await import('../src/utils/realtime.js');
+      emitToUser(user._id, 'notifications:count', counts);
+    } catch (err) {
+      console.error('Error emitiendo notifications:count:', err);
+    }
+
+    res.json({
+      message: 'Notificacion marcada como leida',
+      notification,
+      ...counts,
+    });
+  } catch (error) {
+    console.error('Error al marcar la notificacion como leida:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };

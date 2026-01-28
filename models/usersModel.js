@@ -19,24 +19,19 @@ const userSchema = new Schema({
     type: String,
     required: true
   },
- degrees: [{
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Degree',
-  required: true
-}],
-studiesMultipleDegrees: {
-  type: Boolean,
-  default: false
-},
-
-
-  // age: {
-  //   type: Number
-  // },
-    birthDate: {
-  type: Date,
-  required: true
-},
+  degrees: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Degree',
+    required: true
+  }],
+  studiesMultipleDegrees: {
+    type: Boolean,
+    default: false
+  },
+  birthDate: {
+    type: Date,
+    required: true
+  },
   interests: {
     type: [String],
     default: []
@@ -50,18 +45,17 @@ studiesMultipleDegrees: {
     default: ''
   },
   coverPicture: {
-  type: String,
-  default: ''
-},
+    type: String,
+    default: ''
+  },
   posts: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Post'
   }],
   comments: [{
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Comment'
-}],
-
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Comment'
+  }],
   projects: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project'
@@ -70,11 +64,10 @@ studiesMultipleDegrees: {
     type: Boolean,
     default: false
   },
-  matches: [{ // futuros match académicos
+  matches: [{ 
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project'
   }],
-
   email: {
     type: String,
     required: true,
@@ -86,41 +79,70 @@ studiesMultipleDegrees: {
     required: true
   },
   
+  // ✅ CORRECCIÓN AQUÍ:
   notifications: [{
-  type: {
-  type: String,
-  enum: ['match', 'comentario', 'sistema', 'like'], // ✅ agregamos 'like'
-  required: true
-},
-  message: {
-    type: String,
-    required: true
-  },
-  post: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Post'
-  },
-  fromUser: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  fromUserName: { 
-    type: String, 
-    default: '' 
-  },
-  fromUserAvatar: { 
-    type: String, 
-    default: '' 
-  },
-  read: {
-    type: Boolean,
-    default: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-}],
+    type: {
+      type: String,
+      enum: [
+        // --- Nuevos Estándares (Mayúsculas) ---
+        'MATCH',
+        'INTEREST',
+        'COMMENT_POST',
+        'SYSTEM',
+        'LIKE_POST',
+        'LIKE_COMMENT',
+        'LIKE_REPLY',
+        'CHAT_MESSAGE',
+        'COLLAB_REQUEST',
+        'COLLAB_ACCEPTED',
+        'COLLAB_IGNORED',
+        'COLLAB_STATUS', // Agregado por consistencia
+        
+        // --- Valores que usa tu Controlador ACTUAL (Minúsculas) ---
+        'interest',       // 👈 Necesario para toggleInterest
+        'collab_status',  // 👈 Necesario para manageCollabRequest
+        
+        // --- Compatibilidad Legacy ---
+        'match',
+        'comentario',
+        'sistema',
+        'like'
+      ],
+      required: true
+    },
+    message: {
+      type: String,
+      required: true
+    },
+    post: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Post'
+    },
+    fromUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    fromUserName: { 
+      type: String, 
+      default: '' 
+    },
+    fromUserAvatar: { 
+      type: String, 
+      default: '' 
+    },
+    entity: { // Opcional: Para guardar ID genérico si hace falta
+      kind: String,
+      id: mongoose.Schema.Types.ObjectId
+    },
+    read: {
+      type: Boolean,
+      default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
 
   role: {
     type: String,

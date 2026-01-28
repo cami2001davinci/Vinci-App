@@ -10,21 +10,38 @@ import {
   deleteComment,
   toggleLikeOnComment,
   flagComment,
-  getRepliesToComment // asegurate de importar esto también
+  getRepliesToComment,
+  getCommentPath,
 } from '../controllers/commentsController.js';
 import { protect } from '../Middleware/auth.js';
 
 const router = express.Router();
 
+// Crear comentario
 router.post('/', protect, validateBody(createCommentSchema), createComment);
+
+// Comentarios del usuario logueado
 router.get('/mine', protect, getCommentsByUser);
+
+// Comentarios raíz de un post
 router.get('/post/:postId', getCommentsByPost);
+
+// Actualizar comentario
 router.put('/:commentId', protect, updateComment);
+
+// Eliminar comentario
 router.delete('/:commentId', protect, deleteComment);
+
+// Like/unlike comentario
 router.put('/:commentId/like', protect, toggleLikeOnComment);
+
+// Marcar comentario como inapropiado
 router.put('/flag/:commentId', protect, flagComment);
 
-// ✅ Ruta para subcomentarios (respuestas)
+// Camino completo raíz → hijo → subhijo (para expandir hilo desde notificación)
+router.get('/path/:pathId', getCommentPath); // Cambio: ahora cubrimos /api/comments/path/:pathId que dispara el front
+
+// Subcomentarios (respuestas)
 router.get('/replies/:commentId', getRepliesToComment);
 
 export default router;

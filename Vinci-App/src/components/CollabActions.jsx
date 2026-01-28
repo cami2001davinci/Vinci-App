@@ -8,7 +8,6 @@ const getId = (entity) =>
     ? entity._id || entity.id
     : entity;
 
-// Nuevo: opcionalmente recibimos onPostUpdate para propagar cambios al padre
 export default function CollabActions({ post, onPostUpdate }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -17,149 +16,140 @@ export default function CollabActions({ post, onPostUpdate }) {
   const currentUserId = user?._id || user?.id;
 
   const isCollabPost =
-  post?.category && post.category.toLowerCase() === "colaboradores";
+    post?.category && post.category.toLowerCase() === "colaboradores";
+  
   const isAuthor =
     postId &&
     authorId &&
     currentUserId &&
     authorId.toString() === currentUserId.toString();
 
-  const initialInterested = Array.isArray(post?.interestedUsers)
-    ? post.interestedUsers.some(
-        (id) => getId(id)?.toString() === currentUserId?.toString()
+  // Buscar mi interés personal en el array
+  const myInterestObj = Array.isArray(post?.interestedUsers)
+    ? post.interestedUsers.find(
+        (i) => getId(i.user || i)?.toString() === currentUserId?.toString()
       )
-    : false;
+    : null;
 
+  const initialInterested = !!myInterestObj;
+  
   const [interestStatus, setInterestStatus] = useState(
-    initialInterested ? "pending" : null
+    myInterestObj?.status || (initialInterested ? "pending" : null)
   );
+
   const [interestedCount, setInterestedCount] = useState(
     Array.isArray(post?.interestedUsers) ? post.interestedUsers.length : 0
   );
-  // Nuevo: estado local del post para cerrar equipo y mostrar seleccionados
+
   const [collabStatus, setCollabStatus] = useState(
     post?.collabStatus || "open"
   );
+  
   const [selectedCollaborators, setSelectedCollaborators] = useState(
     Array.isArray(post?.selectedCollaborators) ? post.selectedCollaborators : []
   );
-  // NEW: selección manual de colaboradores aceptados
-  const [selectedUserIds, setSelectedUserIds] = useState([]);
-  const [conversationId, setConversationId] = useState(null);
 
+  // Selección manual para "Confirmar equipo" final
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  
   const [listOpen, setListOpen] = useState(false);
   const [interestedUsers, setInterestedUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState("");
-  const interested =
-    interestStatus === "pending" || interestStatus === "accepted";
-  const sentRequest = interestStatus === "pending";
-  const isCollabClosed = collabStatus === "team_chosen";
-  const collaboratorNames = (selectedCollaborators || []).map((u) => u?.username).filter(Boolean);
 
+  const sentRequest = interestStatus === "pending";
+  const isAccepted = interestStatus === "accepted";
+  // Interesado si mandó solicitud o si ya fue aceptado/rechazado
+  const interested = sentRequest || isAccepted || interestStatus === "rejected";
+
+  const isCollabClosed = collabStatus === "team_chosen";
+  const collaboratorNames = (selectedCollaborators || [])
+    .map((u) => u?.username)
+    .filter(Boolean);
+
+  // Sincronizar estado local cuando el prop 'post' cambia (vía sockets en el padre)
   useEffect(() => {
     setCollabStatus(post?.collabStatus || "open");
     setSelectedCollaborators(
-      Array.isArray(post?.selectedCollaborators) ? post.selectedCollaborators : []
+      Array.isArray(post?.selectedCollaborators)
+        ? post.selectedCollaborators
+        : []
     );
-  }, [post?.collabStatus, post?.selectedCollaborators]);
+    
+    // Si el post ya trae los interesados populados, usarlos directamente
+    if (Array.isArray(post?.interestedUsers)) {
+        setInterestedUsers(post.interestedUsers);
+        setInterestedCount(post.interestedUsers.length);
+        
+        // Actualizar mi estado personal basado en la nueva data
+        const mine = post.interestedUsers.find(
+            (i) => getId(i.user || i)?.toString() === currentUserId?.toString()
+        );
+        setInterestStatus(mine?.status || null);
+    }
 
-  useEffect(() => {
-    if (!postId || !isCollabPost) return;
-    fetchInterested();
-  }, [postId, isCollabPost, isAuthor, currentUserId]);
+  }, [post, currentUserId]);
 
+  // Manejo de sockets para refrescar la lista si entra una solicitud nueva
   useEffect(() => {
     if (!postId || !isCollabPost) return;
 
     const shouldHandle = (detail = {}) => {
       const targetPostId =
         detail.postId ||
-        detail?.conversation?.post?._id ||
-        detail?.conversation?.post ||
         detail?.post?.id ||
         detail?.post?._id;
       return targetPostId && targetPostId.toString() === postId.toString();
     };
 
-    const handleRealtimeInterest = (e) => {
+    const handleRealtimeUpdate = (e) => {
       if (!shouldHandle(e.detail || {})) return;
-      fetchInterested();
-    };
-
-    const handlePostUpdated = (e) => {
-      const payload = e.detail || {};
-      if (!payload?.postId || payload.postId.toString() !== postId.toString()) {
-        return;
-      }
-      if (payload.post) {
-        setCollabStatus(payload.post.collabStatus || "open");
-        setSelectedCollaborators(
-          Array.isArray(payload.post.selectedCollaborators)
-            ? payload.post.selectedCollaborators
-            : []
-        );
-        if (Array.isArray(payload.post.interestedUsers)) {
-          setInterestedCount(payload.post.interestedUsers.length);
-        }
+      // Si el evento trae el post completo, el useEffect de arriba actualizará todo.
+      // Si no, podríamos llamar a fetchInterested() aquí como fallback.
+      if (e.detail?.post) {
+        onPostUpdate?.(e.detail.post);
+      } else {
+        fetchInterested();
       }
     };
 
-    window.addEventListener("vinci:collab-request", handleRealtimeInterest);
-    window.addEventListener("vinci:project-match", handleRealtimeInterest);
-    window.addEventListener("vinci:collab-ignored", handleRealtimeInterest);
-    window.addEventListener("vinci:post-updated", handlePostUpdated);
+    window.addEventListener("vinci:collab-request", handleRealtimeUpdate);
+    window.addEventListener("vinci:post-updated", handleRealtimeUpdate);
 
     return () => {
-      window.removeEventListener("vinci:collab-request", handleRealtimeInterest);
-      window.removeEventListener("vinci:project-match", handleRealtimeInterest);
-      window.removeEventListener("vinci:collab-ignored", handleRealtimeInterest);
-      window.removeEventListener("vinci:post-updated", handlePostUpdated);
+      window.removeEventListener("vinci:collab-request", handleRealtimeUpdate);
+      window.removeEventListener("vinci:post-updated", handleRealtimeUpdate);
     };
-  }, [postId, isCollabPost]);
+  }, [postId, isCollabPost, onPostUpdate]);
 
   const fetchInterested = async () => {
     try {
-      const { data } = await axios.get(`/posts/${postId}/interested`);
-      const myInterest = data?.myInterest || data?.interest;
-      // Ajuste: el contador se alimenta solo del valor real devuelto por el backend
-      if (typeof data?.count === "number") {
-        setInterestedCount(data.count);
-      }
-      setInterestStatus(myInterest?.status || null);
-      setConversationId(myInterest?.conversation || null);
-
-      if (Array.isArray(data?.interests)) {
-        setInterestedUsers(data.interests);
-        // por defecto seleccionamos solo los aceptados mientras este abierto
-        if (!isCollabClosed) {
-          const acceptedIds = data.interests
-            .filter((i) => (i?.status || "").toLowerCase() === "accepted")
-            .map((i) => getId(i.user || i))
-            .filter(Boolean);
-          setSelectedUserIds(acceptedIds);
-        } else if (Array.isArray(data?.post?.selectedCollaborators)) {
-          setSelectedUserIds(
-            data.post.selectedCollaborators
-              .map((u) => getId(u))
-              .filter(Boolean)
-          );
-        }
-      } else if (Array.isArray(data?.interested)) {
-        const mapped = data.interested.map((user) => ({
-          user,
-          status: "pending",
-          conversation: null,
-        }));
-        setInterestedUsers(mapped);
-        setSelectedUserIds([]);
-      } else {
-        setInterestedUsers([]);
-        setSelectedUserIds([]);
+      // Nota: Con la nueva arquitectura, el post ya debería traer esto.
+      // Mantenemos esto como backup o para obtener datos frescos.
+      const { data } = await axios.get(`/posts/${postId}`);
+      if (data) {
+         onPostUpdate?.(data); // Actualizamos al padre para que baje la info por props
       }
     } catch (err) {
-      console.error("Error cargando interesados:", err);
+      console.error("Error cargando post actualizado:", err);
+    }
+  };
+
+  // ✅ NUEVA FUNCIÓN: Aceptar o Rechazar individualmente
+  const handleManagement = async (targetUserId, newStatus) => {
+    if (!targetUserId) return;
+    setError("");
+    try {
+      await axios.put(`/posts/${postId}/collab/${targetUserId}`, {
+        status: newStatus,
+      });
+      // No necesitamos hacer nada manual aquí, el backend emitirá "post:updated"
+      // y el socket actualizará la UI automáticamente.
+    } catch (err) {
+      console.error("Error gestionando colaborador:", err);
+      const msg = err?.response?.data?.message || "Error al actualizar estado.";
+      setError(msg);
     }
   };
 
@@ -173,17 +163,15 @@ export default function CollabActions({ post, onPostUpdate }) {
     setError("");
     try {
       const { data } = await axios.put(`/posts/${postId}/interes`);
-      const nextStatus = data?.interest?.status || null;
-      setInterestStatus(nextStatus);
-      if (data?.interest?.conversation) {
-        setConversationId(data.interest.conversation);
-      }
-      if (typeof data?.count === "number") {
-        setInterestedCount(data.count);
-      }
-      if (isAuthor) {
-        fetchInterested();
-      }
+      
+      // La respuesta trae { interested: bool, myInterest: obj }
+      const myInterest = data?.myInterest;
+      setInterestStatus(myInterest?.status || null);
+      setInterestedCount(data?.interestedCount || interestedCount);
+      
+      // Si soy el autor y me doy auto-like (raro pero posible para testing), recargamos
+      if (isAuthor) fetchInterested();
+
     } catch (err) {
       const msg =
         err?.response?.data?.message ||
@@ -217,15 +205,7 @@ export default function CollabActions({ post, onPostUpdate }) {
     }
   };
 
-  // Ajuste: abre el chat correcto segun el interes (post + owner + interesado)
   const openInterestChat = (interest) => {
-    const convoId = interest?.conversation || conversationId;
-    const status = interest?.status || interestStatus;
-    if (convoId) {
-      const tab = status === "pending" ? "requests" : "chats";
-      navigate(`/chats?conversationId=${convoId}&tab=${tab}`);
-      return;
-    }
     const target = getId(interest?.user || interest);
     if (target) {
       openChatDirect(target);
@@ -234,9 +214,20 @@ export default function CollabActions({ post, onPostUpdate }) {
     }
   };
 
+  // Filtrar aceptados para el botón de confirmar equipo
   const acceptedInterests = interestedUsers.filter(
     (i) => (i?.status || "").toLowerCase() === "accepted"
   );
+
+  // Inicializar seleccionados para "Confirmar equipo" con los que ya están aceptados
+  useEffect(() => {
+    if(!isCollabClosed && acceptedInterests.length > 0) {
+        // Por defecto, marcamos todos los aceptados para confirmar el equipo
+        const ids = acceptedInterests.map(i => getId(i.user || i)).filter(Boolean);
+        setSelectedUserIds(ids);
+    }
+  }, [interestedUsers.length, isCollabClosed]);
+
 
   const toggleSelectedUser = (userId) => {
     if (!userId || isCollabClosed) return;
@@ -247,7 +238,6 @@ export default function CollabActions({ post, onPostUpdate }) {
     );
   };
 
-  // Nuevo: confirma el equipo con los usuarios aceptados
   const handleFinalizeTeam = async () => {
     if (!postId || !selectedUserIds.length) return;
     setFinalizing(true);
@@ -257,22 +247,15 @@ export default function CollabActions({ post, onPostUpdate }) {
         `/posts/${postId}/collab/finalize-team`,
         { selectedUserIds }
       );
-      const updatedPost = data?.post;
-      setCollabStatus(updatedPost?.collabStatus || "team_chosen");
-      setSelectedCollaborators(updatedPost?.selectedCollaborators || []);
-      onPostUpdate?.(updatedPost || post);
-      setSelectedUserIds(
-        (updatedPost?.selectedCollaborators || [])
-          .map((u) => getId(u))
-          .filter(Boolean)
-      );
-      // Bloqueamos mas solicitudes y cerramos la lista para evitar reenvios
+      // El backend devuelve { ok: true, post: updatedPost }
+      if (data?.post) {
+          onPostUpdate?.(data.post);
+      }
       setListOpen(false);
-      fetchInterested();
     } catch (err) {
       const msg =
         err?.response?.data?.message ||
-        "No se pudo confirmar el equipo. Intenta de nuevo.";
+        "No se pudo confirmar el equipo.";
       setError(msg);
     } finally {
       setFinalizing(false);
@@ -284,6 +267,8 @@ export default function CollabActions({ post, onPostUpdate }) {
   return (
     <div className="mt-2">
       {error && <div className="text-danger small mb-1">{error}</div>}
+      
+      {/* HEADER DE TRABAJANDO CON... */}
       {isCollabClosed && collaboratorNames.length > 0 && (
         <div className="small text-success mb-2">
           <strong>Trabajando con:</strong>{" "}
@@ -291,19 +276,24 @@ export default function CollabActions({ post, onPostUpdate }) {
         </div>
       )}
 
+      {/* VISTA PARA VISITANTES (NO AUTOR) */}
       {!isAuthor ? (
         <div className="d-flex flex-wrap gap-2 align-items-center">
           <button
             className={`btn btn-sm ${
-              sentRequest || interested ? "btn-outline-success" : "btn-primary"
+              interested ? "btn-outline-secondary" : "btn-primary"
             }`}
             onClick={toggleInterest}
-            disabled={loading || sentRequest || isCollabClosed}
+            disabled={loading || isCollabClosed || (interested && !sentRequest)}
           >
             {isCollabClosed
-              ? "Equipo cerrado"
-              : sentRequest || interested
-              ? "Solicitud enviada"
+              ? "Convocatoria cerrada"
+              : isAccepted
+              ? "¡Fuiste aceptado!"
+              : interestStatus === "rejected"
+              ? "Solicitud rechazada"
+              : sentRequest
+              ? "Cancelar solicitud"
               : "Quiero colaborar"}
           </button>
           <span className="text-muted small">
@@ -311,6 +301,7 @@ export default function CollabActions({ post, onPostUpdate }) {
           </span>
         </div>
       ) : (
+        /* VISTA PARA EL AUTOR */
         <div className="border rounded p-2 bg-light">
           <div className="d-flex justify-content-between align-items-center">
             <div>
@@ -325,15 +316,16 @@ export default function CollabActions({ post, onPostUpdate }) {
                   className="btn btn-sm btn-success"
                   onClick={handleFinalizeTeam}
                   disabled={finalizing || selectedUserIds.length === 0}
+                  title="Cierra la convocatoria y selecciona el equipo final"
                 >
-                  {finalizing ? "Confirmando..." : "Confirmar equipo"}
+                  {finalizing ? "Confirmando..." : "Confirmar equipo final"}
                 </button>
               )}
               <button
                 className="btn btn-sm btn-outline-secondary"
                 onClick={() => setListOpen((v) => !v)}
               >
-                {listOpen ? "Cerrar" : "Ver interesados"}
+                {listOpen ? "Ocultar" : "Ver lista"}
               </button>
             </div>
           </div>
@@ -342,64 +334,94 @@ export default function CollabActions({ post, onPostUpdate }) {
             <div className="mt-2">
               {interestedUsers.length === 0 ? (
                 <p className="text-muted small m-0">
-                  Todavia no hay interesados.
+                  Todavía no hay interesados.
                 </p>
               ) : (
                 interestedUsers.map((interest) => {
                   const userItem = interest?.user || interest;
+                  const userId = getId(userItem);
                   const status = interest?.status || "pending";
-                  const statusLabel =
-                    status === "accepted"
-                      ? "Aceptado"
-                      : status === "rejected"
-                      ? "Rechazado"
-                      : "Pendiente";
-                  const badgeClass =
-                    status === "accepted"
-                      ? "bg-success"
-                      : status === "rejected"
-                      ? "bg-secondary"
-                      : "bg-warning text-dark";
+                  
+                  let statusLabel = "Pendiente";
+                  let badgeClass = "bg-warning text-dark";
+
+                  if (status === "accepted") {
+                    statusLabel = "Aceptado";
+                    badgeClass = "bg-success";
+                  } else if (status === "rejected") {
+                    statusLabel = "Rechazado";
+                    badgeClass = "bg-secondary";
+                  }
+
                   const avatar = userItem?.profilePicture
                     ? `${
                         import.meta.env.VITE_SERVER_URL ||
                         "http://localhost:3000"
                       }${userItem.profilePicture}`
                     : null;
+
                   return (
                     <div
-                      key={interest?._id || getId(userItem)}
-                      className="d-flex align-items-center justify-content-between border-bottom py-1"
+                      key={interest?._id || userId}
+                      className="d-flex align-items-center justify-content-between border-bottom py-2"
                     >
                       <div className="d-flex align-items-center gap-2">
+                        {/* Checkbox solo visible si estamos confirmando equipo final y el usuario ya fue aceptado */}
                         {!isCollabClosed && status === "accepted" && (
                           <input
                             type="checkbox"
-                            className="form-check-input me-2"
-                            checked={selectedUserIds.includes(getId(userItem))}
-                            onChange={() => toggleSelectedUser(getId(userItem))}
+                            className="form-check-input"
+                            checked={selectedUserIds.includes(userId)}
+                            onChange={() => toggleSelectedUser(userId)}
+                            title="Incluir en equipo final"
                           />
                         )}
-                        {avatar ? (
+                        
+                        {avatar && (
                           <img
                             src={avatar}
                             alt={userItem?.username}
                             className="rounded-circle"
                             style={{ width: 32, height: 32, objectFit: "cover" }}
                           />
-                        ) : null}
-                        <div className="d-flex align-items-center gap-2">
-                          <span>@{userItem?.username || "Usuario"}</span>
-                          <span className={`badge ${badgeClass}`}>{statusLabel}</span>
+                        )}
+                        
+                        <div className="d-flex flex-column" style={{lineHeight: '1.1'}}>
+                          <span className="fw-bold small">@{userItem?.username || "Usuario"}</span>
+                          <span className={`badge ${badgeClass} align-self-start`} style={{fontSize: '0.65rem'}}>
+                            {statusLabel}
+                          </span>
                         </div>
                       </div>
-                      <div className="d-flex gap-2">
+
+                      <div className="d-flex gap-1">
+                        {/* BOTONES DE ACCIÓN PARA EL AUTOR (Aceptar/Rechazar) */}
+                        {!isCollabClosed && status === "pending" && (
+                          <>
+                             <button
+                                className="btn btn-sm btn-outline-success px-2 py-0"
+                                onClick={() => handleManagement(userId, "accepted")}
+                                title="Aceptar colaborador"
+                              >
+                                <i className="bi bi-check-lg"></i>
+                              </button>
+                              <button
+                                className="btn btn-sm btn-outline-danger px-2 py-0"
+                                onClick={() => handleManagement(userId, "rejected")}
+                                title="Rechazar solicitud"
+                              >
+                                <i className="bi bi-x-lg"></i>
+                              </button>
+                          </>
+                        )}
+                        
                         <button
-                          className="btn btn-sm btn-outline-primary"
+                          className="btn btn-sm btn-link text-secondary"
                           onClick={() => openInterestChat(interest)}
                           disabled={loading}
+                          title="Enviar mensaje"
                         >
-                          Abrir chat
+                          <i className="bi bi-chat-dots"></i>
                         </button>
                       </div>
                     </div>

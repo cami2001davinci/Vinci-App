@@ -1,32 +1,35 @@
 import express from 'express';
-import { createPostSchema } from '../validations/postAndCommentValidation.js';
-import { validateBody } from '../Middleware/validate.js';
 import multer from 'multer';
 import path from 'path';
+
+// 1. CORRECCIÓN: Eliminamos el import de 'validateToken.js' que no existe.
+// Usaremos 'protect' de 'auth.js' para todo.
+import { protect } from '../Middleware/auth.js';
+
 import {
   createPost,
   updatePost,
   getAllPosts,
   getPostById,
   getPostsByDegree,
-  getPostsByUser, // ✅ Agregado
+  getPostsByUser,
   getCategoryStatsByDegree,
   getCategoryActivityByDegree,
   deletePostById,
   toggleLike,
   toggleInterest,
-  flagPost 
-
+  manageCollabRequest,
+  // getInterestedUsers, // ELIMINADO: Ya no existe en el controlador (se usa getPostById)
+  flagPost,
+  finalizeCollabTeam,
+  // acceptCollaborator, // ELIMINADO: Ya no existe (reemplazado por manageCollabRequest)
 } from '../controllers/postsController.js';
-import { protect } from '../Middleware/auth.js'
 
 const router = express.Router();
 
-
-/// Configuración del almacenamiento: dependiendo del tipo de archivo guardamos en diferentes carpetas
+// Configuración de Multer (Se mantiene igual)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Definir carpeta según tipo MIME
     const imageTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
     const docTypes = [
       'application/pdf',
@@ -40,7 +43,6 @@ const storage = multer.diskStorage({
     } else if (docTypes.includes(file.mimetype)) {
       cb(null, path.join(process.cwd(), 'public/uploads/docs'));
     } else {
-      // Opción: rechazar o guardar en otra carpeta
       cb(new Error('Tipo de archivo no permitido'), false);
     }
   },
@@ -51,7 +53,6 @@ const storage = multer.diskStorage({
   }
 });
 
-// Filtro de tipos permitidos
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
     'image/jpeg', 'image/png', 'image/jpg', 'image/webp',
@@ -68,51 +69,43 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Middleware multer con límites
 const uploads = multer({
   storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // máximo 5MB por archivo (puedes ajustar)
-  },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter
 });
 
-// Rutas
+// === RUTAS ===
 
-router.post(
-  '/',
-  protect,
-  uploads.array('files', 5),
-  createPost        // 👈 sin validateBody aquí
-);
+// Rutas específicas primero para evitar colisiones con :postId
+router.post('/:postId/collab/finalize-team', protect, finalizeCollabTeam);
+router.post('/', protect, uploads.array('files', 5), createPost);
 
-
-// Obtener todos los posts
 router.get('/', getAllPosts);
-
-// ✅ Obtener todos los posts de un usuario
 router.get('/my-posts', protect, getPostsByUser);
 
-router.get('/degree/:slug', getPostsByDegree)
+router.get('/degree/:slug/category-stats', getCategoryStatsByDegree);
+router.get('/degree/:slug/category-activity', getCategoryActivityByDegree);
+router.get('/degree/:slug', getPostsByDegree);
 
-// Obtener un post por ID
-router.get('/:postId', getPostById);
-
-
-// Actualizar un post (solo autor)
-router.put('/:postId', protect, updatePost);
-
-// Eliminar un post (solo autor)
-router.delete('/:postId', protect, deletePostById);
-
-router.put('/:postId/like', protect, toggleLike);
-router.put('/:postId/interes', protect, toggleInterest);
-
+// Ruta para marcar inapropiado
 router.put('/flag/:postId', protect, flagPost);
 
-router.get('/degree/:slug/category-stats', getCategoryStatsByDegree);
+// Likes
+router.put('/:postId/like', protect, toggleLike);
 
-router.get('/degree/:slug/category-activity', getCategoryActivityByDegree);
+// === SISTEMA DE MATCH / COLABORACIÓN ===
+// 2. CORRECCIÓN: Usamos 'protect' en lugar de 'authRequired'
+router.put('/:postId/interes', protect, toggleInterest);
 
+// 3. CORRECCIÓN: Ruta unificada para aceptar/rechazar (manageCollabRequest)
+router.put('/:postId/collab/:userId', protect, manageCollabRequest);
+
+// CRUD básico (:postId siempre al final para no tapar otras rutas)
+// Nota: getInterestedUsers se eliminó porque el frontend ahora obtiene 
+// los interesados dentro del objeto del post (getPostById)
+router.get('/:postId', getPostById);
+router.put('/:postId', protect, updatePost);
+router.delete('/:postId', protect, deletePostById);
 
 export default router;

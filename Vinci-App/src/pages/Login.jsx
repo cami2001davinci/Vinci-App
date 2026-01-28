@@ -396,7 +396,7 @@ export default function Login() {
               aria-labelledby="login-heading"
             >
               <figure style={{ marginBottom: "1rem" }}>
-                <img className="logo" src="../public/img/1.png" alt="Vinci logo" />
+                <img className="logo" src="img/1.png" alt="Vinci logo" />
               </figure>
 
               <h2 id="login-heading" className="title">

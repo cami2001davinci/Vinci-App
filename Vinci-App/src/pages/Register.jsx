@@ -569,7 +569,7 @@ export default function Register() {
               <figure style={{ marginBottom: "0.75rem" }}>
                 <img
                   className="logo logo-register"
-                  src="../public/img/1.png"
+                  src="img/1.png"
                   alt="Vinci logo"
                 />
               </figure>

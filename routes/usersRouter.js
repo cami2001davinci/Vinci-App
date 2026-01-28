@@ -7,16 +7,20 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs'; // 
 
-import {
+import * as usersController from '../controllers/usersController.js';
+  const {
   registerUser,
   loginUser,
   getAllUsers,
   getUserById,
   updateUser,
   deleteUser,
+  getPublicProfile,
   getMyNotifications,
-  markNotificationsAsRead
-} from '../controllers/usersController.js';
+  markNotificationsAsRead,
+  markNotificationAsRead,
+  acknowledgeNotifications,
+} = usersController;
 
 const router = express.Router();
 
@@ -58,6 +62,10 @@ router.post('/register', validateBody(userRegisterSchema), registerUser);
 router.post('/login', validateBody(userLoginSchema), loginUser);
 router.get('/', protect, isAdmin, getAllUsers);
 router.get('/me/notifications', protect, getMyNotifications);
+router.put('/me/notifications/:notificationId/read', protect, markNotificationAsRead);
+router.put('/me/notifications/read-all', protect, markNotificationsAsRead);
+router.put('/me/notifications/opened', protect, acknowledgeNotifications);
+
 
 router.put('/me/update-profile', protect, async (req, res) => {
   try {
@@ -167,8 +175,8 @@ router.get('/me', protect, async (req, res) => {
   }
 });
 
+router.get('/profile/:id', protect, getPublicProfile);
 router.get('/:id', protect, isAdmin, getUserById);
-router.put('/me/notifications/mark-as-read', protect, markNotificationsAsRead);
 router.delete('/:id', protect, isAdmin, deleteUser);
 router.put('/:id', protect, validateBody(userUpdateSchema), updateUser);
 

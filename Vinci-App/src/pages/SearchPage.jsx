@@ -1,5 +1,5 @@
 // src/pages/SearchPage.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import axios from "../api/axiosInstance";
 import PostCard from "../components/PostCard";
@@ -13,12 +13,31 @@ const TABS = [
   { key: "multimedia", label: "Multimedia" },
 ];
 
+// Hook de Debounce
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const q = searchParams.get("q") || "";
   const tab = searchParams.get("tab") || "destacados";
 
+  const [inputValue, setInputValue] = useState(q);
+  const debouncedQuery = useDebounce(inputValue, 500);
+
+  // ✅ NUEVO: Estados para paginación
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -26,40 +45,83 @@ export default function SearchPage() {
   const [users, setUsers] = useState([]);
   const [media, setMedia] = useState([]);
 
+  // ✅ TRUCO DE MENTOR: Ref para detectar si cambió la búsqueda real
+  // Esto evita que pidamos la página 2 de una búsqueda vieja por error
+  const prevSearch = useRef({ q, tab });
+
   const withBaseUrl = (url) => {
     if (!url) return "";
     return url.startsWith("http") ? url : `${baseUrl}${url}`;
   };
 
-  // Cargar resultados según tab
+  // EFECTO 1: Sincronizar URL (Input -> URL)
   useEffect(() => {
-    if (!q.trim()) {
+    if (debouncedQuery !== q) {
+      const newParams = { tab };
+      if (debouncedQuery) newParams.q = debouncedQuery;
+      setSearchParams(newParams);
+      // ✅ Al cambiar la búsqueda, reseteamos la página a 1
+      setPage(1); 
+    }
+  }, [debouncedQuery, tab, q, setSearchParams]);
+
+  // ✅ EFECTO 2: Resetear Data si cambian q o tab (Búsqueda Nueva)
+  useEffect(() => {
+    if (prevSearch.current.q !== q || prevSearch.current.tab !== tab) {
+      setPage(1);
       setPosts([]);
       setUsers([]);
       setMedia([]);
-      return;
+      setHasMore(true);
+      prevSearch.current = { q, tab };
     }
+  }, [q, tab]);
+
+  // ✅ EFECTO 3: Cargar datos (Paginación y Búsqueda)
+  useEffect(() => {
+    if (!q.trim()) return;
 
     const fetchData = async () => {
       setLoading(true);
       setErrorMsg("");
       try {
+        // Definimos límites según backend (20 para posts/users, 30 media)
+        const limit = tab === "multimedia" ? 30 : 20;
+
+        let newData = [];
+        
         if (tab === "destacados" || tab === "recientes") {
           const { data } = await axios.get("/search/posts", {
-            params: { q, tab },
+            params: { q, tab, page, limit }, // ✅ Enviamos page y limit
           });
-          setPosts(data);
+          newData = data;
+          
+          setPosts((prev) => (page === 1 ? data : [...prev, ...data]));
+
         } else if (tab === "personas") {
           const { data } = await axios.get("/search/users", {
-            params: { q },
+            params: { q, limit, page },
           });
-          setUsers(data);
+          newData = data;
+          
+          setUsers((prev) => (page === 1 ? data : [...prev, ...data]));
+
         } else if (tab === "multimedia") {
           const { data } = await axios.get("/search/media", {
-            params: { q },
+            params: { q, limit, page },
           });
-          setMedia(data);
+          newData = data;
+          
+          setMedia((prev) => (page === 1 ? data : [...prev, ...data]));
         }
+
+        // ✅ Si llegaron menos items que el límite, es que no hay más páginas
+        if (newData.length < limit) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
+
       } catch (err) {
         console.error("Error en SearchPage:", err);
         setErrorMsg(
@@ -71,22 +133,29 @@ export default function SearchPage() {
     };
 
     fetchData();
-  }, [q, tab]);
+  }, [q, tab, page]); // ✅ Dependencias clave: q, tab Y page
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const value = e.target.elements.search.value.trim();
-    if (!value) return;
-    setSearchParams({ q: value, tab: "destacados" });
+    if (inputValue.trim()) {
+       setSearchParams({ q: inputValue, tab });
+       setPage(1); // ✅ Reset manual por si acaso
+    }
   };
 
   const handleTabChange = (key) => {
     setSearchParams({ q, tab: key });
+    setPage(1); // ✅ Reset al cambiar tab
+  };
+
+  // ✅ Función para el botón "Ver más"
+  const handleLoadMore = () => {
+    setPage((prev) => prev + 1);
   };
 
   return (
     <div className="container py-4">
-      {/* Buscador superior */}
+      {/* Buscador */}
       <form onSubmit={handleSubmit} className="mb-3">
         <div className="input-group">
           <span className="input-group-text">
@@ -95,7 +164,8 @@ export default function SearchPage() {
           <input
             type="text"
             name="search"
-            defaultValue={q}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
             placeholder="Prueba a buscar personas, carreras o palabras clave"
             className="form-control"
           />
@@ -120,7 +190,7 @@ export default function SearchPage() {
         ))}
       </ul>
 
-      {/* Estado */}
+      {/* Info Resultados */}
       {q && (
         <p className="text-muted mb-2">
           Resultados para <strong>"{q}"</strong> · Sección{" "}
@@ -130,43 +200,30 @@ export default function SearchPage() {
         </p>
       )}
 
-      {loading && <p>Cargando resultados…</p>}
       {errorMsg && <p className="text-danger">{errorMsg}</p>}
 
-      {/* CONTENIDO POR TAB */}
-      {!loading && !errorMsg && q.trim() && (
+      {/* CONTENIDO */}
+      {!errorMsg && q.trim() && (
         <>
-          {(tab === "destacados" || tab === "recientes") &&
-            (posts.length ? (
-              posts.map((p) => {
-                const likesCount = Array.isArray(p.likedBy)
-                  ? p.likedBy.length
-                  : typeof p.likesCount === "number"
-                  ? p.likesCount
-                  : 0;
-
-                const commentsCount = Array.isArray(p.comments)
-                  ? p.comments.length
-                  : typeof p.commentsCount === "number"
-                  ? p.commentsCount
-                  : 0;
-
-                return (
+          {/* POSTS */}
+          {(tab === "destacados" || tab === "recientes") && (
+            <>
+              {posts.length > 0 ? (
+                posts.map((p) => (
                   <div key={p._id} className="mb-3">
-                    {/* Tarjeta normal del post */}
                     <PostCard post={p} />
                   </div>
-                );
-              })
-            ) : (
-              <p className="text-muted">
-                No hay publicaciones para esta búsqueda.
-              </p>
-            ))}
+                ))
+              ) : (
+                !loading && <p className="text-muted">No hay publicaciones.</p>
+              )}
+            </>
+          )}
 
+          {/* USUARIOS */}
           {tab === "personas" && (
             <>
-              {users.length ? (
+              {users.length > 0 ? (
                 <div className="list-group">
                   {users.map((u) => {
                     const avatarUrl = withBaseUrl(u.profilePicture);
@@ -179,7 +236,7 @@ export default function SearchPage() {
                         {avatarUrl ? (
                           <img
                             src={avatarUrl}
-                            alt={u.username || "usuario"}
+                            alt={u.username}
                             className="rounded-circle border"
                             style={{ width: 56, height: 56, objectFit: "cover" }}
                           />
@@ -191,7 +248,6 @@ export default function SearchPage() {
                             <i className="bi bi-person fs-4 text-muted" />
                           </div>
                         )}
-
                         <div className="flex-grow-1">
                           <div className="fw-semibold">
                             {u.firstName} {u.lastName}
@@ -215,16 +271,15 @@ export default function SearchPage() {
                   })}
                 </div>
               ) : (
-                <p className="text-muted">
-                  No hay personas que coincidan con esta busqueda.
-                </p>
+                !loading && <p className="text-muted">No hay personas.</p>
               )}
             </>
           )}
 
+          {/* MULTIMEDIA */}
           {tab === "multimedia" && (
             <>
-              {media.length ? (
+              {media.length > 0 ? (
                 <div className="row g-3">
                   {media.map((m, idx) => (
                     <div
@@ -235,7 +290,7 @@ export default function SearchPage() {
                         {m.type === "image" ? (
                           <img
                             src={withBaseUrl(m.url)}
-                            alt={m.title || "archivo"}
+                            alt={m.title}
                             className="card-img-top"
                             style={{ objectFit: "cover", height: 140 }}
                           />
@@ -256,7 +311,7 @@ export default function SearchPage() {
                         )}
                         <div className="card-footer">
                           <small className="d-block text-truncate">
-                            {m.title || "Publicación"}
+                            {m.title || "Archivo"}
                           </small>
                           <a
                             href={withBaseUrl(m.url)}
@@ -264,7 +319,7 @@ export default function SearchPage() {
                             rel="noopener noreferrer"
                             className="small"
                           >
-                            Ver archivo
+                            Ver
                           </a>
                         </div>
                       </div>
@@ -272,11 +327,23 @@ export default function SearchPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-muted">
-                  No hay archivos multimedia que coincidan con esta búsqueda.
-                </p>
+                !loading && <p className="text-muted">No hay archivos multimedia.</p>
               )}
             </>
+          )}
+
+          {/* ✅ BOTÓN CARGAR MÁS */}
+          {loading && <p className="text-center my-3">Cargando...</p>}
+          
+          {!loading && hasMore && (posts.length > 0 || users.length > 0 || media.length > 0) && (
+            <div className="text-center mt-4">
+              <button 
+                className="btn btn-outline-primary" 
+                onClick={handleLoadMore}
+              >
+                Cargar más resultados
+              </button>
+            </div>
           )}
         </>
       )}

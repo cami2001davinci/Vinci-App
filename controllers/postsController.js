@@ -2,8 +2,12 @@ import Post from "../models/postsModel.js";
 import User from "../models/usersModel.js";
 import Degree from "../models/degreesModel.js";
 import { createPostSchema } from "../validations/postAndCommentValidation.js";
+import { getNotificationCounts } from "../src/utils/notificationCounts.js";
 
-// Función para autoincrementar postNumber
+// Helper: Obtener ID seguro (string)
+const getSafeId = (entity) => {
+  return entity?._id ? entity._id.toString() : entity?.toString();
+};
 
 export const flagPost = async (req, res) => {
   try {
@@ -22,7 +26,6 @@ export const flagPost = async (req, res) => {
 
 export const createPost = async (req, res) => {
   try {
-    // 1) Copiar body y parsear "links" si vino como string (multipart/form-data)
     const body = { ...req.body };
     if (typeof body.links === "string") {
       try {
@@ -32,7 +35,6 @@ export const createPost = async (req, res) => {
       }
     }
 
-    // 2) Validar con Joi (título, contenido, categoría, links opcionales, toolsUsed, degreeSlug/Id)
     const { value, error } = createPostSchema.validate(body, {
       abortEarly: false,
     });
@@ -41,26 +43,18 @@ export const createPost = async (req, res) => {
       return res.status(400).json({ message: "Datos inválidos", errors });
     }
 
-    const { title, content, category, degreeSlug, degreeId, toolsUsed, links } =
-      value;
+    const { title, content, category, degreeSlug, degreeId, toolsUsed, links } = value;
 
-    // 3) Resolver carrera (degree) por slug o id
     let degreeDoc = null;
     if (degreeSlug) {
       degreeDoc = await Degree.findOne({ slug: degreeSlug }).select("_id");
-      if (!degreeDoc)
-        return res.status(400).json({ message: "Carrera no encontrada" });
     } else if (degreeId) {
       degreeDoc = await Degree.findById(degreeId).select("_id");
-      if (!degreeDoc)
-        return res.status(400).json({ message: "Carrera no encontrada" });
     } else {
-      return res
-        .status(400)
-        .json({ message: "Debes indicar una carrera (degreeSlug o degreeId)" });
+      return res.status(400).json({ message: "Debes indicar una carrera" });
     }
+    if (!degreeDoc) return res.status(400).json({ message: "Carrera no encontrada" });
 
-    // 4) Adjuntos (opcional): separar imágenes y documentos
     const uploadedImages = [];
     const uploadedDocs = [];
     if (Array.isArray(req.files)) {
@@ -73,10 +67,8 @@ export const createPost = async (req, res) => {
       });
     }
 
-    // 5) Flag automático (por ahora mantenemos tu lógica)
     const lookingForCollab = category === "colaboradores";
 
-    // 6) Crear documento
     const newPost = new Post({
       author: req.user._id,
       degree: degreeDoc._id,
@@ -88,11 +80,11 @@ export const createPost = async (req, res) => {
       images: uploadedImages,
       documents: uploadedDocs,
       lookingForCollab,
+      interestedUsers: [] // Inicializamos vacío
     });
 
     await newPost.save();
 
-    // 7) Devolver ya populado (autor con sus carreras y la carrera del post)
     const populatedPost = await Post.findById(newPost._id)
       .populate({
         path: "author",
@@ -101,6 +93,13 @@ export const createPost = async (req, res) => {
       })
       .populate("degree", "name slug");
 
+    try {
+      const { emitToAll } = await import("../src/utils/realtime.js");
+      emitToAll("post:created", { post: populatedPost });
+    } catch (err) {
+      console.error("Error emitiendo post:created:", err);
+    }
+
     return res.status(201).json(populatedPost);
   } catch (err) {
     console.error("Error createPost:", err);
@@ -108,19 +107,15 @@ export const createPost = async (req, res) => {
   }
 };
 
-// HOME: obtener todos los posts (para Home)
 export const getAllPosts = async (req, res) => {
   try {
     const { limit = 20, cursor, category } = req.query;
-
-    // filtro base
     const match = {};
     if (category) match.category = category;
     if (cursor) match.createdAt = { $lt: new Date(cursor) };
 
-    // si no es admin, ocultar los "flagged"
     if (!req.user?.role || req.user.role !== "admin") {
-      match.flagged = { $ne: true }; // NO igual a true (incluye undefined y false)
+      match.flagged = { $ne: true };
     }
 
     const posts = await Post.find(match)
@@ -131,10 +126,9 @@ export const getAllPosts = async (req, res) => {
         select: "username firstName lastName profilePicture degrees",
         populate: { path: "degrees", select: "name slug" },
       })
-      .populate("degree", "name slug");
-
-    // (opcional) cursor para "ver más"
-    // const nextCursor = posts.length ? posts[posts.length - 1].createdAt.toISOString() : null;
+      .populate("degree", "name slug")
+      // NO populamos interestedUsers aquí para no hacer la carga pesada en el home
+      .populate("selectedCollaborators", "username firstName lastName profilePicture");
 
     return res.json(posts);
   } catch (error) {
@@ -143,16 +137,12 @@ export const getAllPosts = async (req, res) => {
   }
 };
 
-// Obtener todos los posts del usuario autenticado
 export const getPostsByUser = async (req, res) => {
   try {
     const posts = await Post.find({ author: req.user._id })
       .populate("author", "username profilePicture")
       .populate("degree", "name")
-      .populate({
-        path: "comments",
-        populate: { path: "author", select: "username" },
-      })
+      .populate("selectedCollaborators", "username firstName lastName profilePicture")
       .sort({ createdAt: -1 });
 
     res.json(posts);
@@ -161,29 +151,27 @@ export const getPostsByUser = async (req, res) => {
   }
 };
 
-// Obtener post por id
 export const getPostById = async (req, res) => {
   try {
     const postId = req.params.postId;
-
+    // Aquí sí populamos los interesados para que el dueño vea la lista al entrar
     const post = await Post.findById(postId)
-      .populate("author", "username profilePicture")
-      .populate("degree", "name")
       .populate({
-        path: "comments",
-        populate: { path: "author", select: "username" },
-        options: { sort: { createdAt: 1 } },
-      });
+        path: "author",
+        select: "username firstName lastName profilePicture degrees",
+        populate: { path: "degrees", select: "name slug" },
+      })
+      .populate("degree", "name slug")
+      .populate("interestedUsers.user", "username firstName lastName profilePicture")
+      .populate("selectedCollaborators", "username firstName lastName profilePicture");
 
     if (!post) return res.status(404).json({ message: "Post no encontrado" });
-
     res.json(post);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Actualizar post
 export const updatePost = async (req, res) => {
   const postId = req.params.postId;
   const userId = req.user._id;
@@ -192,15 +180,41 @@ export const updatePost = async (req, res) => {
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: "Post no encontrado" });
 
-    if (post.author.toString() !== userId.toString())
-      return res
-        .status(403)
-        .json({ message: "No tienes permiso para editar este post" });
+    if (getSafeId(post.author) !== userId.toString()) {
+      return res.status(403).json({ message: "No tienes permiso para editar este post" });
+    }
 
-    const updatedPost = await Post.findByIdAndUpdate(postId, req.body, {
+    const allowedFields = ["title", "content", "category", "links", "toolsUsed"];
+    const updates = {};
+    // ... (Tu lógica de validación de campos se mantiene igual)
+    for (const field of allowedFields) {
+        if (typeof req.body[field] !== "undefined") {
+          updates[field] = req.body[field];
+        }
+    }
+    // ... (Logica de parseo de JSON links/toolsUsed se mantiene igual)
+    if (typeof req.body.links === "string") {
+        try { updates.links = JSON.parse(req.body.links); } catch { updates.links = []; }
+    } else if (req.body.links) { updates.links = req.body.links; }
+
+    if (req.body.toolsUsed) updates.toolsUsed = req.body.toolsUsed;
+
+    const updatedPost = await Post.findByIdAndUpdate(postId, updates, {
       new: true,
       runValidators: true,
-    });
+    })
+      .populate("author", "username firstName lastName profilePicture")
+      .populate("degree", "name slug")
+      .populate("interestedUsers.user", "username profilePicture"); // Importante para realtime
+
+    // Emitir update
+    const { emitToAll, emitToPost } = await import("../src/utils/realtime.js");
+    const payload = {
+      postId: updatedPost._id.toString(),
+      post: updatedPost,
+    };
+    emitToAll("post:updated", payload);
+    emitToPost(postId, "post:updated", payload);
 
     res.json(updatedPost);
   } catch (error) {
@@ -208,31 +222,296 @@ export const updatePost = async (req, res) => {
   }
 };
 
-// Eliminar post
 export const deletePostById = async (req, res) => {
+  // ... (Tu lógica existente está bien)
   const postId = req.params.postId;
+  const userId = req.user._id;
+  try {
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post no encontrado" });
+    if (getSafeId(post.author) !== userId.toString()) {
+      return res.status(403).json({ message: "No tienes permiso" });
+    }
+    await Post.findByIdAndDelete(postId);
+    
+    // Realtime cleanup
+    const { emitToAll, emitToPost } = await import("../src/utils/realtime.js");
+    const payload = { postId: postId.toString() };
+    emitToPost(postId, "post:deleted", payload);
+    emitToAll("post:deleted", payload);
+
+    res.json({ message: "Post eliminado" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ==========================================
+// 🚀 LÓGICA DE COLLABORATION / MATCH (FIX)
+// ==========================================
+
+// 1. Solicitar colaboración (Toggle)
+export const toggleInterest = async (req, res) => {
+  const { postId } = req.params;
   const userId = req.user._id;
 
   try {
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: "Post no encontrado" });
 
-    if (post.author.toString() !== userId.toString())
-      return res
-        .status(403)
-        .json({ message: "No tienes permiso para eliminar este post" });
+    // Buscar en el array de subdocumentos
+    const existingIndex = post.interestedUsers.findIndex(
+      (i) => i.user.toString() === userId.toString()
+    );
 
-    await Post.findByIdAndDelete(postId);
+    let isInterested = false;
 
-    res.json({ message: "Post eliminado correctamente" });
+    if (existingIndex !== -1) {
+      // Si ya existe, lo quitamos
+      post.interestedUsers.splice(existingIndex, 1);
+    } else {
+      // Si no existe, agregamos con estado 'pending'
+      post.interestedUsers.push({ user: userId, status: 'pending' });
+      isInterested = true;
+
+      // Notificación al autor
+      if (post.author.toString() !== userId.toString()) {
+         const [author, actor] = await Promise.all([
+          User.findById(post.author),
+          User.findById(userId).select("username profilePicture"),
+        ]);
+        if(author) {
+            const notif = {
+                type: "interest",
+                message: `${actor?.username || "Alguien"} quiere colaborar en “${post.title}”.`,
+                post: post._id,
+                fromUser: userId,
+                read: false,
+                createdAt: new Date()
+            };
+            author.notifications.push(notif);
+            await author.save();
+            
+            // Emitir notif socket
+            const { emitToUser } = await import("../src/utils/realtime.js");
+            const unreadCount = author.notifications.filter(n => !n.read).length;
+            emitToUser(author._id, "notification", notif);
+            emitToUser(author._id, "notifications:count", { unreadCount });
+        }
+      }
+    }
+
+    await post.save();
+    
+    // Repopular y emitir
+    const updatedPost = await Post.findById(postId)
+      .populate("author", "username profilePicture")
+      .populate("interestedUsers.user", "username profilePicture");
+
+    const { emitToPost } = await import("../src/utils/realtime.js");
+    emitToPost(postId, "post:updated", { postId, post: updatedPost });
+
+    return res.json({
+      interested: isInterested,
+      interestedCount: post.interestedUsers.length,
+      // Devolvemos el objeto de interés actualizado
+      myInterest: isInterested ? post.interestedUsers[post.interestedUsers.length - 1] : null
+    });
+
   } catch (error) {
+    console.error("Error en toggleInterest:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// GET /posts/degree/:slug/category-stats
-export const getCategoryStatsByDegree = async (req, res) => {
+// 2. Gestionar solicitud (Aceptar/Rechazar individualmente)
+// Reemplaza a 'acceptInterest' y 'acceptCollaborator'
+export const manageCollabRequest = async (req, res) => {
+  const { postId, userId } = req.params; 
+  const { status } = req.body; // 'accepted' o 'rejected'
+  const currentUserId = req.user._id;
+
   try {
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post no encontrado" });
+
+    if (post.author.toString() !== currentUserId.toString()) {
+      return res.status(403).json({ message: "No eres el autor del post" });
+    }
+
+    const interestReq = post.interestedUsers.find(
+      (i) => i.user.toString() === userId
+    );
+
+    if (!interestReq) {
+      return res.status(404).json({ message: "Solicitud no encontrada" });
+    }
+
+    interestReq.status = status;
+    await post.save();
+
+    // Repopular para realtime
+    const updatedPost = await Post.findById(postId)
+      .populate("author", "username profilePicture")
+      .populate("interestedUsers.user", "username profilePicture");
+
+    const { emitToPost, emitToUser } = await import("../src/utils/realtime.js");
+    
+    // Actualizar UI del post
+    emitToPost(postId, "post:updated", { postId, post: updatedPost });
+
+    // Notificar al usuario afectado
+    const notifMsg = status === 'accepted' 
+      ? `¡Felicidades! Fuiste aceptado en "${post.title}".`
+      : `Tu solicitud para "${post.title}" fue rechazada.`;
+      
+    emitToUser(userId, "notification", {
+      type: "collab_status",
+      message: notifMsg,
+      read: false,
+      createdAt: new Date()
+    });
+
+    res.json({ message: `Usuario ${status}`, post: updatedPost });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error gestionando solicitud" });
+  }
+};
+
+// 3. Confirmar equipo final (Cierra la convocatoria)
+// Actualizado para usar el modelo embebido
+export const finalizeCollabTeam = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { selectedUserIds } = req.body || {}; 
+    const actorId = req.user._id;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post no encontrado" });
+
+    if (post.author.toString() !== actorId.toString()) {
+      return res.status(403).json({ message: "Solo el autor puede confirmar" });
+    }
+
+    const idsToSelect = Array.isArray(selectedUserIds) ? selectedUserIds : [];
+    
+    // Validar que los usuarios seleccionados estén en la lista de interesados aceptados
+    // Opcional: Podrías forzar el estado 'accepted' aquí si no lo estaba
+    
+    // Actualizar estados masivamente en el array local
+    post.interestedUsers.forEach(interest => {
+        const uid = interest.user.toString();
+        if (idsToSelect.includes(uid)) {
+            interest.status = 'accepted';
+        } else {
+            // Si no fue seleccionado, pasa a rejected (o se queda pending/rejected)
+            // Generalmente al cerrar equipo, los demás se rechazan
+            interest.status = 'rejected';
+        }
+    });
+
+    // Guardar en el campo selectedCollaborators para acceso rápido
+    post.selectedCollaborators = idsToSelect;
+    post.collabStatus = "team_chosen";
+    
+    await post.save();
+
+    const populatedPost = await Post.findById(postId)
+        .populate("author", "username profilePicture")
+        .populate("interestedUsers.user", "username profilePicture")
+        .populate("selectedCollaborators", "username firstName lastName profilePicture");
+
+    const { emitToPost } = await import("../src/utils/realtime.js");
+    emitToPost(postId, "post:updated", { postId, post: populatedPost });
+
+    return res.json({ ok: true, post: populatedPost });
+
+  } catch (err) {
+    console.error("Error en finalizeCollabTeam:", err);
+    res.status(500).json({ message: "No se pudo confirmar el equipo" });
+  }
+};
+
+// ... (El resto de funciones como toggleLike, getCategoryStatsByDegree, etc. están bien y se mantienen)
+
+export const toggleLike = async (req, res) => {
+    // ... Tu código existente para likes está correcto ...
+    // (Pégalo aquí si no lo tienes, pero en tu archivo enviado estaba bien)
+     const { postId } = req.params;
+  const userId = req.user._id;
+
+  try {
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: "Post no encontrado" });
+
+    if (!Array.isArray(post.likedBy)) post.likedBy = [];
+
+    const hasLiked = post.likedBy.some(
+      (id) => id.toString() === userId.toString()
+    );
+
+    if (hasLiked) {
+      post.likedBy = post.likedBy.filter(
+        (id) => id.toString() !== userId.toString()
+      );
+    } else {
+      post.likedBy.push(userId);
+      // Notificación al autor
+      const postAuthorId = getSafeId(post.author);
+      if (postAuthorId !== userId.toString()) {
+        const [author, actor] = await Promise.all([
+          User.findById(postAuthorId),
+          User.findById(userId).select("username profilePicture"),
+        ]);
+
+        if (author) {
+          const notif = {
+            type: "LIKE_POST",
+            message: `${actor?.username || "Alguien"} le dio like a “${post.title}”.`,
+            post: post._id,
+            fromUser: userId,
+            read: false,
+            createdAt: new Date(),
+          };
+          author.notifications.push(notif);
+          await author.save();
+
+            // Emitir socket notif
+          const { emitToUser } = await import("../src/utils/realtime.js");
+          const unreadCount = author.notifications.filter(n => !n.read).length;
+          emitToUser(author._id, "notification", notif);
+          emitToUser(author._id, "notifications:count", { unreadCount });
+        }
+      }
+    }
+
+    await post.save();
+
+    const { emitToUser, emitToPost } = await import("../src/utils/realtime.js");
+    const likePayload = {
+      postId: post._id.toString(),
+      likesCount: post.likedBy.length,
+      actorId: userId.toString(),
+    };
+
+    emitToUser(post.author, "post:like", likePayload);
+    emitToPost(post._id, "post:like", likePayload);
+
+    return res.json({
+      liked: !hasLiked,
+      likesCount: post.likedBy.length,
+    });
+  } catch (error) {
+    console.error("Error en toggleLike:", error);
+    return res.status(500).json({ message: "Error al dar like" });
+  }
+};
+
+export const getCategoryStatsByDegree = async (req, res) => {
+    // ... Mantiene tu lógica original ...
+     try {
     const { slug } = req.params;
     const degree = await Degree.findOne({ slug }).select("_id");
     if (!degree)
@@ -257,227 +536,25 @@ export const getCategoryStatsByDegree = async (req, res) => {
   }
 };
 
-export const getPostsByDegree = async (req, res) => {
-  try {
-    const { slug } = req.params;
-    const { category, limit = 20, cursor } = req.query;
-
-    // 1) Obtener la carrera por slug
-    const degree = await Degree.findOne({ slug })
-      .select("_id name slug")
-      .lean();
-    if (!degree) {
-      return res.status(404).json({ message: "Carrera no encontrada" });
-    }
-
-    // 2) Armar el filtro (match)
-    const match = { degree: degree._id };
-    if (category) match.category = category;
-    if (cursor) match.createdAt = { $lt: new Date(cursor) };
-    if (!req.user?.role || req.user.role !== "admin") {
-      match.flagged = { $ne: true };
-    }
-
-    // 3) Buscar posts
-    const posts = await Post.find(match)
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .populate({
-        path: "author",
-        select: "username firstName lastName profilePicture degrees",
-        populate: { path: "degrees", select: "name slug" }, // autor -> carreras
-      })
-      .populate("degree", "name slug"); // carrera del post
-
-    // 4) Cursor para paginación
-    const nextCursor = posts.length
-      ? posts[posts.length - 1].createdAt.toISOString()
-      : null;
-
-    // 5) Responder
-    return res.json({ degree, items: posts, nextCursor });
-  } catch (error) {
-    console.error(error);
-    return res
-      .status(500)
-      .json({ message: "Error listando posts por carrera" });
-  }
-};
-
-// Dar o quitar "like" a un post
-export const toggleLike = async (req, res) => {
-  const { postId } = req.params;
-  const userId = req.user._id;
-
-  try {
-    const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post no encontrado" });
-
-    // Asegurar array
-    if (!Array.isArray(post.likedBy)) post.likedBy = [];
-
-    // Comparación robusta de ObjectId
-    const hasLiked = post.likedBy.some(
-      (id) => id.toString() === userId.toString()
-    );
-
-    if (hasLiked) {
-      // Quitar like
-      post.likedBy = post.likedBy.filter(
-        (id) => id.toString() !== userId.toString()
-      );
-    } else {
-      // Agregar like
-      post.likedBy.push(userId);
-
-      // Notificación solo si es nuevo like y no es self-like
-      if (post.author.toString() !== userId.toString()) {
-        const [author, actor] = await Promise.all([
-          User.findById(post.author),
-          User.findById(userId).select("username"),
-        ]);
-
-        if (author) {
-          const notif = {
-            type: "like",
-            message: `${actor?.username || "Alguien"} le dio like a “${
-              post.title
-            }”.`,
-            post: post._id,
-            fromUser: userId,
-            read: false,
-            createdAt: new Date(),
-          };
-          author.notifications.push(notif);
-          await author.save();
-
-          // Emitir notificación en tiempo real
-          const unreadCount = author.notifications.filter(
-            (n) => !n.read
-          ).length;
-          const { emitToUser } = await import("../src/utils/realtime.js");
-          emitToUser(author._id, "notification", notif);
-          emitToUser(author._id, "notifications:count", { unreadCount });
-        }
-      }
-    }
-
-    // Guardar post antes de emitir el contador actualizado
-    await post.save();
-
-    // Emitir evento específico para actualizar contadores en vivo
-    const { emitToUser, emitToPost } = await import("../src/utils/realtime.js"); // 👈 ruta correcta
-    const likePayload = {
-      postId: post._id.toString(),
-      likesCount: post.likedBy.length,
-      actorId: userId.toString(),
-    };
-
-    // Al autor del post (actualiza su UI sin refrescar)
-    emitToUser(post.author, "post:like", likePayload);
-
-    emitToPost(post._id, "post:like", likePayload);
-
-    // (Opcional) eco al que dio like, si querés actualizar su UI en otra vista
-    // emitToUser(userId, 'post:like:ack', likePayload);
-
-    return res.json({
-      liked: !hasLiked,
-      likesCount: post.likedBy.length,
-    });
-  } catch (error) {
-    console.error("Error en toggleLike:", error);
-    return res.status(500).json({ message: "Error al dar like" });
-  }
-};
-
-// Mostrar o quitar interés en colaborar (match)
-export const toggleInterest = async (req, res) => {
-  const { postId } = req.params;
-  const userId = req.user._id;
-
-  try {
-    const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post no encontrado" });
-
-    // includes falla si son ObjectId → usar some + toString()
-    const hasInterest = post.interestedUsers?.some(
-      (id) => id.toString() === userId.toString()
-    );
-
-    if (hasInterest) {
-      post.interestedUsers = post.interestedUsers.filter(
-        (id) => id.toString() !== userId.toString()
-      );
-    } else {
-      post.interestedUsers.push(userId);
-
-      // Notificar al autor del post (nuevo interés), evitando self-noti
-      if (post.author.toString() !== userId.toString()) {
-        const [author, actor] = await Promise.all([
-          User.findById(post.author),
-          User.findById(userId).select("username profilePicture"),
-        ]);
-
-        if (author) {
-          const notif = {
-            type: "interest", // 👈 interés, no match
-            message: `${actor?.username || "Un usuario"} mostró interés en tu post “${post.title}”.`,
-            post: post._id,
-            fromUser: userId,
-            fromUserName: actor?.username || "",
-            fromUserAvatar: actor?.profilePicture || "",
-            read: false,
-            createdAt: new Date(),
-          };
-          author.notifications.push(notif);
-          await author.save();
-
-          const unreadCount = author.notifications.filter(n => !n.read).length;
-          const { emitToUser } = await import("../src/utils/realtime.js");
-          emitToUser(author._id, "notification", notif);
-          emitToUser(author._id, "notifications:count", { unreadCount });
-        }
-      }
-    }
-
-    await post.save();
-
-    return res.json({
-      interested: !hasInterest,
-      interestedCount: post.interestedUsers.length,
-    });
-  } catch (error) {
-    console.error("Error en toggleInterest:", error);
-    res.status(500).json({ message: error.message });
-  }
-};
-
-
-// GET /posts/degree/:slug/category-activity
 export const getCategoryActivityByDegree = async (req, res) => {
-  try {
+    // ... Mantiene tu lógica original ...
+      try {
     const { slug } = req.params;
     const degree = await Degree.findOne({ slug }).select("_id");
     if (!degree)
       return res.status(404).json({ message: "Carrera no encontrada" });
 
-    // 1) Ordenamos por fecha descendente para “autores recientes”
     const activity = await Post.aggregate([
       { $match: { degree: degree._id, flagged: { $ne: true } } },
       { $sort: { createdAt: -1 } },
-
-      // 2) Agrupamos por categoría
       {
         $group: {
           _id: "$category",
           count: { $sum: 1 },
           lastPostAt: { $max: "$createdAt" },
-          authors: { $push: "$author" }, // ordenados por createdAt desc
+          authors: { $push: "$author" },
         },
       },
-
-      // 3) Autores únicos y cortamos a 3
       {
         $project: {
           _id: 0,
@@ -487,8 +564,6 @@ export const getCategoryActivityByDegree = async (req, res) => {
           authors: { $slice: [{ $setUnion: ["$authors", []] }, 3] },
         },
       },
-
-      // 4) Enriquecemos autores (avatar/username)
       {
         $lookup: {
           from: "users",
@@ -520,5 +595,52 @@ export const getCategoryActivityByDegree = async (req, res) => {
     res.json({ items: activity });
   } catch (e) {
     res.status(500).json({ message: "Error obteniendo actividad" });
+  }
+};
+
+export const getPostsByDegree = async (req, res) => {
+    // ... Mantiene tu lógica original ...
+      try {
+    const { slug } = req.params;
+    const { category, limit = 20, cursor } = req.query;
+
+    const degree = await Degree.findOne({ slug })
+      .select("_id name slug")
+      .lean();
+    if (!degree) {
+      return res.status(404).json({ message: "Carrera no encontrada" });
+    }
+
+    const match = { degree: degree._id };
+    if (category) match.category = category;
+    if (cursor) match.createdAt = { $lt: new Date(cursor) };
+    if (!req.user?.role || req.user.role !== "admin") {
+      match.flagged = { $ne: true };
+    }
+
+    const posts = await Post.find(match)
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .populate({
+        path: "author",
+        select: "username firstName lastName profilePicture degrees",
+        populate: { path: "degrees", select: "name slug" },
+      })
+      .populate("degree", "name slug")
+      .populate(
+        "selectedCollaborators",
+        "username firstName lastName profilePicture"
+      );
+
+    const nextCursor = posts.length
+      ? posts[posts.length - 1].createdAt.toISOString()
+      : null;
+
+    return res.json({ degree, items: posts, nextCursor });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "Error listando posts por carrera" });
   }
 };

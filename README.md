@@ -16,7 +16,7 @@
 
   * Foto de perfil y portada (editables, máximo 5 MB cada una)
   * Lista de posteos y comentarios propios
-* Sistema de notificaciones (actualmente no en tiempo real)
+* Sistema de n  (actualmente no en tiempo real)
 
 ---
 
