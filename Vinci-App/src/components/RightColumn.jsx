@@ -1,7 +1,5 @@
-// RightColumn.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ChatWidget from "./ChatWidget";
 
 const RightColumn = () => {
   const [searchText, setSearchText] = useState("");
@@ -17,7 +15,7 @@ const RightColumn = () => {
 
   return (
     <>
-      {/* Buscador arriba, fijo en la columna */}
+      {/* Buscador */}
       <div className="card p-3 mb-3">
         <form onSubmit={handleSearchSubmit}>
           <div className="input-group">
@@ -35,8 +33,7 @@ const RightColumn = () => {
         </form>
       </div>
 
-      {/* El widget flota abajo a la derecha y es global */}
-      <ChatWidget />
+      {/* AQUÍ SOLÍA ESTAR EL WIDGET - AHORA ESTÁ LIMPIO */}
     </>
   );
 };

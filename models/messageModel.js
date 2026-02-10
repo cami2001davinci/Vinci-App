@@ -1,41 +1,49 @@
+// models/messageModel.js
 import mongoose from 'mongoose';
 
-const { Schema } = mongoose;
-
-const messageSchema = new Schema(
+const messageSchema = new mongoose.Schema(
   {
     conversation: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: 'Conversation',
       required: true,
     },
     sender: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
     content: {
       type: String,
       required: true,
-      trim: true,
-      maxlength: 2000,
     },
     readBy: [
       {
-        type: Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        default: [],
       },
     ],
-    // Nuevo: marca de mensajes de sistema (para eventos como aceptar colaboracion)
-    isSystem: { type: Boolean, default: false },
-    // Nuevo: metadatos opcionales (ej: info del proyecto)
-    meta: { type: Schema.Types.Mixed, default: {} },
+    // FASE 2: Contexto para anclajes y renderizado especial
+    context: {
+      type: {
+        type: String,
+        enum: ['NONE', 'PROJECT_MATCH', 'COLLAB_REQUEST', 'SYSTEM'],
+        default: 'NONE',
+      },
+      projectId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Post',
+      },
+      projectTitle: String,
+      status: {
+        type: String,
+        enum: ['pending', 'accepted', 'rejected', 'canceled'],
+      },
+      additionalData: mongoose.Schema.Types.Mixed,
+    },
   },
   { timestamps: true }
 );
-
-messageSchema.index({ conversation: 1, createdAt: -1 });
 
 const Message = mongoose.model('Message', messageSchema);
 export default Message;

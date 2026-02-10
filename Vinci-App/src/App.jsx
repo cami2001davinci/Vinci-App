@@ -23,6 +23,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import NotificationBridge from "./components/NotificationBridge";
 import Welcome from "./pages/Welcome";
 import SearchPage from "./pages/SearchPage";
+import RequestsPage from "./pages/RequestsPage";
 
 function App() {
   // Logs básicos de conexión/desconexión
@@ -107,12 +108,24 @@ function App() {
         <Route path="/welcome" element={<Welcome />} />
 
         {/* Rutas protegidas con layout principal */}
+        
         <Route
           path="/"
           element={
             <PrivateRoute>
               <AppLayout>
                 <Home />
+              </AppLayout>
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/requests" 
+          element={
+            <PrivateRoute>
+              <AppLayout>
+                <RequestsPage /> 
               </AppLayout>
             </PrivateRoute>
           }
@@ -205,6 +218,7 @@ function App() {
     </PrivateRoute>
   }
 />
+
 
         {/* Redirección vacía a "/" */}
         {/* Redirección vacía a la pantalla de bienvenida */}

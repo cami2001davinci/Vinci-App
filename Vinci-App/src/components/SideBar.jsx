@@ -10,6 +10,7 @@ import {
   User,
   MessageSquare,
   BookOpen,
+  Handshake,
 } from "lucide-react";
 
 const Sidebar = () => {
@@ -286,6 +287,13 @@ const Sidebar = () => {
             </ul>
           )}
         </div>
+
+        <Link 
+          to="/requests" 
+          className="link flex items-center gap-2 text-lg"
+        >
+          <Handshake /> Match de Proyectos
+        </Link>
 
         <Link
           to={user ? `/profile/${user.id}` : "/login"}

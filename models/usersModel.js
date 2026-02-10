@@ -79,36 +79,11 @@ const userSchema = new Schema({
     required: true
   },
   
-  // ✅ CORRECCIÓN AQUÍ:
   notifications: [{
     type: {
-      type: String,
-      enum: [
-        // --- Nuevos Estándares (Mayúsculas) ---
-        'MATCH',
-        'INTEREST',
-        'COMMENT_POST',
-        'SYSTEM',
-        'LIKE_POST',
-        'LIKE_COMMENT',
-        'LIKE_REPLY',
-        'CHAT_MESSAGE',
-        'COLLAB_REQUEST',
-        'COLLAB_ACCEPTED',
-        'COLLAB_IGNORED',
-        'COLLAB_STATUS', // Agregado por consistencia
-        
-        // --- Valores que usa tu Controlador ACTUAL (Minúsculas) ---
-        'interest',       // 👈 Necesario para toggleInterest
-        'collab_status',  // 👈 Necesario para manageCollabRequest
-        
-        // --- Compatibilidad Legacy ---
-        'match',
-        'comentario',
-        'sistema',
-        'like'
-      ],
+      type: String, 
       required: true
+      // enum: [ ... ] <-- COMENTADO PARA PERMITIR DATOS SUCIOS Y EVITAR VALIDATION ERROR
     },
     message: {
       type: String,
@@ -121,10 +96,6 @@ const userSchema = new Schema({
     fromUser: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
-    },
-    fromUserName: { 
-      type: String, 
-      default: '' 
     },
     fromUserAvatar: { 
       type: String, 

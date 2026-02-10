@@ -4,41 +4,29 @@ import axios from "../api/axiosInstance";
 import { socket } from "../services/socket";
 import { useAuth } from "../context/AuthContext";
 
-const getConversationId = (conversation) =>
-  conversation?._id || conversation?.id || "";
-
-const getId = (entity) =>
-  typeof entity === "object" && entity !== null
-    ? entity._id || entity.id
-    : entity;
-
-const getOtherParticipant = (conversation, currentUserId) => {
-  const participants = conversation?.participants || [];
-  const current = currentUserId?.toString();
-  const found = participants.find((p) => {
-    const pid = getId(p)?.toString();
-    return pid && pid !== current;
-  });
-  if (found) return found;
-  const fallback = conversation?.participant;
-  const fallbackId = getId(fallback)?.toString();
-  if (fallbackId && fallbackId !== current) return fallback;
-  return null;
+// --- HELPERS SEGUROS ---
+const getId = (entity) => {
+  if (!entity) return "";
+  if (typeof entity === "string") return entity;
+  return entity._id || entity.id || "";
 };
 
-const getRequestSender = (conversation, currentUserId) => {
-  const requestedBy = getId(conversation?.requestedBy);
-  const participants = conversation?.participants || [];
-  if (requestedBy) {
-    const fromParticipants = participants.find(
-      (p) => getId(p)?.toString() === requestedBy.toString()
-    );
-    if (fromParticipants) return fromParticipants;
-  }
-  if (conversation?.requestedBy && typeof conversation.requestedBy === "object") {
-    return conversation.requestedBy;
-  }
-  return getOtherParticipant(conversation, currentUserId);
+const getConversationId = (conv) => getId(conv);
+
+const normalizeConversation = (conv, currentUserId) => {
+  if (!conv) return null;
+  const ownerId = getId(conv.owner);
+  const requestedById = getId(conv.requestedBy);
+  const unreadBy = conv.unreadBy || [];
+  
+  const isOwner = ownerId.toString() === currentUserId?.toString();
+  const unread = unreadBy.some(id => getId(id).toString() === currentUserId?.toString());
+  
+  // Status fallback seguro
+  const status = conv.status || "active"; 
+  const isPendingForMe = status === "pending" && isOwner;
+
+  return { ...conv, status, unread, isOwner, isPendingForMe };
 };
 
 export default function ChatsPage() {
@@ -58,84 +46,55 @@ export default function ChatsPage() {
   const [accepting, setAccepting] = useState(false);
 
   const messagesRef = useRef(null);
+  const currentUserId = getId(user);
 
-  const currentUserId = user?._id || user?.id;
-  // Normaliza datos para ocultar solicitudes al interesado y marcar al owner
-  const normalizeConversation = (conv) => {
-    if (!conv) return conv;
-    const unreadBy = conv.unreadBy || [];
-    const ownerId = getId(conv.owner);
-    const requestedById = getId(conv.requestedBy);
-    const unread = unreadBy.some(
-      (id) => id?.toString() === currentUserId?.toString()
-    );
-    const isOwner = ownerId?.toString() === currentUserId?.toString();
-    const isRequester =
-      requestedById?.toString() === currentUserId?.toString();
-    const isPendingForMe = conv.status === "pending" && isOwner;
-    return { ...conv, unread, isOwner, isRequester, isPendingForMe };
+  // --- DEDUPLICADOR DE LISTAS (Fix Error Keys) ---
+  const uniqueList = (list) => {
+    const seen = new Set();
+    return list.filter(item => {
+      const id = getId(item);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   };
 
   const fetchConversations = async () => {
     try {
       const { data } = await axios.get("/chats");
-      const list = Array.isArray(data?.conversations)
-        ? data.conversations.map(normalizeConversation)
-        : [];
-      const reqs = Array.isArray(data?.requests)
-        ? data.requests.map(normalizeConversation)
-        : [];
+      
+      let list = Array.isArray(data?.conversations) ? data.conversations : [];
+      let reqs = Array.isArray(data?.requests) ? data.requests : [];
 
-      const visibleRequests = reqs.filter((r) => r.isPendingForMe);
-      const visibleConversations = list.filter(
-        (c) => c.status !== "pending"
-      );
+      // Normalizar y Deduplicar
+      list = uniqueList(list.map(c => normalizeConversation(c, currentUserId)));
+      reqs = uniqueList(reqs.map(r => normalizeConversation(r, currentUserId)));
+
+      const visibleRequests = reqs.filter(r => r.isPendingForMe);
+      const visibleConversations = list.filter(c => c.status !== "pending");
 
       setConversations(visibleConversations);
       setRequests(visibleRequests);
 
+      // Lógica de selección inicial (query params)
       const fromQuery = searchParams.get("conversationId");
-      const tabQuery = searchParams.get("tab");
-      const initialReq = visibleRequests.find(
-        (r) => getConversationId(r) === fromQuery
-      );
-      const initialConv = visibleConversations.find(
-        (c) => getConversationId(c) === fromQuery
-      );
-
-      if (initialReq) {
-        setSelectedId(getConversationId(initialReq));
-        setSelectedIsRequest(true);
-      } else if (initialConv) {
-        setSelectedId(getConversationId(initialConv));
-        setSelectedIsRequest(false);
-      } else {
-        const firstReq = tabQuery === "requests" ? visibleRequests[0] : null;
-        const firstConv =
-          tabQuery !== "requests"
-            ? visibleConversations.find((c) => c.unread) ||
-              visibleConversations[0]
-            : null;
-        const pick = firstReq || firstConv;
-        if (pick) {
-          setSelectedId(getConversationId(pick));
-          setSelectedIsRequest(pick.isPendingForMe);
-          setSearchParams({
-            conversationId: getConversationId(pick),
-            tab: pick.isPendingForMe ? "requests" : "chats",
-          });
-        }
+      if (fromQuery) {
+        const foundReq = visibleRequests.find(r => getId(r) === fromQuery);
+        const foundConv = visibleConversations.find(c => getId(c) === fromQuery);
+        
+        if (foundReq) selectConversation(fromQuery, true);
+        else if (foundConv) selectConversation(fromQuery, false);
       }
     } catch (err) {
-      console.error("Error al cargar conversaciones:", err);
+      console.error("Error fetching chats:", err);
     }
   };
 
   useEffect(() => {
-    if (!currentUserId) return;
-    fetchConversations();
+    if (currentUserId) fetchConversations();
   }, [currentUserId]);
 
+  // --- SOCKETS ---
   useEffect(() => {
     if (!selectedId || selectedIsRequest) return;
 
@@ -151,137 +110,65 @@ export default function ChatsPage() {
   useEffect(() => {
     const onChat = (e) => {
       const { conversationId, message, conversation } = e.detail || {};
-      const cid = conversationId || getConversationId(conversation);
+      const cid = conversationId || getId(conversation);
       if (!cid) return;
-      const normalized = conversation ? normalizeConversation(conversation) : null;
-      const isPending = normalized?.status === "pending";
 
-      if (isPending) {
-        if (!normalized?.isPendingForMe) return; // Solo el owner ve la solicitud
-        setRequests((prev) => {
-          const exists = prev.some((r) => getConversationId(r) === cid);
-          if (exists) return prev;
-          return [normalized, ...prev];
-        });
-        return;
+      // 🛑 FIX DUPLICADOS: Ignorar si soy el remitente
+      const senderId = getId(message?.sender);
+      if (senderId.toString() === currentUserId.toString()) {
+        return; 
       }
 
-      // Limpia solicitudes si el chat pasa a activo y actualiza la lista
-      setRequests((prev) =>
-        prev.filter((r) => getConversationId(r) !== cid)
-      );
+      // Actualizar listas (Sidebar)
+      const normalized = normalizeConversation(conversation, currentUserId);
+      if (normalized) {
+         setConversations(prev => {
+            // Quitamos el viejo y ponemos el nuevo arriba
+            const others = prev.filter(c => getId(c) !== cid);
+            return [normalized, ...others];
+         });
+      }
 
-      setConversations((prev) => {
-        const without = prev.filter((c) => getConversationId(c) !== cid);
-        const existing = prev.find((c) => getConversationId(c) === cid);
-        const updated = normalized || normalizeConversation(existing);
-        return updated ? [updated, ...without] : prev;
-      });
-
+      // Si es el chat abierto, agregar mensaje
       if (cid === selectedId && message) {
-        setMessages((prev) => {
-          const exists = prev.some(
-            (m) => (m._id || m.id) === (message._id || message.id)
-          );
-          if (exists) return prev;
-          return [...prev, message];
+        setMessages(prev => {
+           // Doble check por seguridad
+           if (prev.some(m => getId(m) === getId(message))) return prev;
+           return [...prev, message];
         });
         markAsRead(cid);
         scrollToBottom();
       }
     };
 
-    const onRequest = (e) => {
-      const conv = e.detail?.conversation || e.detail;
-      if (!conv || conv.status !== "pending") return;
-      const cid = getConversationId(conv);
-      const normalized = normalizeConversation(conv);
-      if (!normalized?.isPendingForMe) return;
-      setRequests((prev) => {
-        const exists = prev.some((r) => getConversationId(r) === cid);
-        if (exists) return prev;
-        return [normalized, ...prev];
-      });
-    };
-
-    const onIgnored = (e) => {
-      const { conversationId } = e.detail || {};
-      if (!conversationId) return;
-      setRequests((prev) =>
-        prev.filter((r) => getConversationId(r) !== conversationId)
-      );
-      setConversations((prev) =>
-        prev.filter((c) => getConversationId(c) !== conversationId)
-      );
-      if (selectedId === conversationId) {
-        setSelectedId("");
-        setSelectedIsRequest(false);
-        setMessages([]);
-      }
-    };
-
     window.addEventListener("vinci:chat-message", onChat);
-    window.addEventListener("vinci:collab-request", onRequest);
-    window.addEventListener("vinci:collab-ignored", onIgnored);
-    return () => {
-      window.removeEventListener("vinci:chat-message", onChat);
-      window.removeEventListener("vinci:collab-request", onRequest);
-      window.removeEventListener("vinci:collab-ignored", onIgnored);
-    };
+    return () => window.removeEventListener("vinci:chat-message", onChat);
   }, [selectedId, currentUserId]);
 
-  const fetchMessages = async (conversationId) => {
+  const fetchMessages = async (id) => {
     setLoadingMessages(true);
     try {
-      const { data } = await axios.get(`/chats/${conversationId}/messages`);
-      setMessages(Array.isArray(data?.messages) ? data.messages : []);
-      if (data?.conversation) {
-        const normalized = normalizeConversation(data.conversation);
-        if (normalized?.status === "pending" && !normalized.isPendingForMe) {
-          return;
-        }
-        setConversations((prev) => {
-          const others = prev.filter(
-            (c) => getConversationId(c) !== conversationId
-          );
-          return normalized ? [normalized, ...others] : others;
-        });
-      }
-    } catch (err) {
-      if (err?.response?.status === 404) {
-        setMessages([]);
-        setSelectedId(null);
-        return;
-      }
-      console.error("Error al cargar mensajes:", err);
-      setMessages([]);
+      const { data } = await axios.get(`/chats/${id}/messages`);
+      setMessages(data?.messages || []);
+    } catch(e) { 
+      console.error(e); 
+      setMessages([]); 
     } finally {
       setLoadingMessages(false);
       scrollToBottom();
     }
   };
 
-  const markAsRead = async (conversationId) => {
-    if (!conversationId) return;
+  const markAsRead = async (id) => {
     try {
-      await axios.put(`/chats/${conversationId}/read`);
-      setConversations((prev) =>
-        prev.map((c) =>
-          getConversationId(c) === conversationId
-            ? { ...c, unread: false, unreadBy: [] }
-            : c
-        )
-      );
-    } catch (err) {
-      if (err?.response?.status === 404) return;
-      console.error("Error al marcar leido:", err);
-    }
+      await axios.put(`/chats/${id}/read`);
+      setConversations(prev => prev.map(c => getId(c) === id ? { ...c, unread: false } : c));
+    } catch(e) {}
   };
 
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (!selectedId || !messageText.trim() || sending || selectedIsRequest)
-      return;
+    if (!messageText.trim() || sending) return;
 
     setSending(true);
     try {
@@ -291,408 +178,157 @@ export default function ChatsPage() {
 
       if (data?.message) {
         setMessageText("");
-        setConversations((prev) => {
-          const others = prev.filter(
-            (c) => getConversationId(c) !== selectedId
-          );
-          const updated = normalizeConversation(
-            data.conversation ||
-              prev.find((c) => getConversationId(c) === selectedId)
-          );
-          return updated ? [updated, ...others] : prev;
-        });
+        
+        // 1. Agregar mensaje manualmente (Feedback instantáneo)
+        setMessages(prev => [...prev, data.message]);
+        scrollToBottom();
+
+        // 2. Actualizar sidebar (subir conversación)
+        if (data.conversation) {
+           const updatedConv = normalizeConversation(data.conversation, currentUserId);
+           setConversations(prev => {
+              const others = prev.filter(c => getId(c) !== getId(updatedConv));
+              return [updatedConv, ...others];
+           });
+        }
       }
     } catch (err) {
-      console.error("Error al enviar mensaje:", err);
+      console.error(err);
     } finally {
       setSending(false);
     }
   };
 
- // Usa ESTO dentro de tu handleAcceptRequest O handleAcceptCollab
-const handleAcceptRequest = async () => {
-  if (!selectedId || !selectedConversation?.isPendingForMe) {
-    setActionError("Solo el owner puede aceptar esta colaboracion.");
-    return;
-  }
-  setAccepting(true);
-  setActionError("");
-
-  try {
-    const { data } = await axios.post(`/chats/${selectedId}/accept-collab`);
-
-    const updatedConv = data?.conversation;
-    const convId = getConversationId(updatedConv) || selectedId;
-
-    // 1) Sacar la solicitud de la lista de "Solicitudes"
-    setRequests((prev) =>
-      prev.filter((r) => getConversationId(r) !== selectedId)
-    );
-
-    // 2) Meter/actualizar la conversación en la lista de "Chats"
-    if (updatedConv) {
-      setConversations((prev) => {
-        const others = prev.filter((c) => getConversationId(c) !== convId);
-        return [normalizeConversation(updatedConv), ...others];
-      });
-    }
-
-    // 3) Cambiar la vista: dejar de estar en "solicitud" y pasar a "chat"
-    setSelectedIsRequest(false);
-    setSelectedId(convId);
-    setMessages([]); // que se recarguen limpio
-
-    setSearchParams({
-      conversationId: convId,
-      tab: "chats",
-    });
-
-    // 4) Cargar mensajes y marcar como leído YA MISMO
-    await fetchMessages(convId);
-    await markAsRead(convId);
-
-    // (si el backend mandó un mensaje de sistema, lo agregamos después de traer todo)
-    if (data?.message) {
-      setMessages((prev) => {
-        const exists = prev.some(
-          (m) => (m._id || m.id) === (data.message._id || data.message.id)
-        );
-        return exists ? prev : [...prev, data.message];
-      });
-    }
-
-    scrollToBottom();
-  } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      "No se pudo aceptar la colaboracion.";
-    setActionError(msg);
-  } finally {
-    setAccepting(false);
-  }
-};
-
-
-
-  const handleIgnoreRequest = async () => {
-    if (!selectedId || !selectedConversation?.isPendingForMe) {
-      setActionError("Solo el owner puede gestionar la solicitud.");
-      return;
-    }
-    setAccepting(true);
-    setActionError("");
-    try {
-      await axios.post(`/chats/requests/${selectedId}/ignore`);
-      setRequests((prev) =>
-        prev.filter((r) => getConversationId(r) !== selectedId)
-      );
-      setSelectedId("");
-      setSelectedIsRequest(false);
-      setMessages([]);
-      setSearchParams({});
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message || "No se pudo ignorar la solicitud.";
-      setActionError(msg);
-    } finally {
-      setAccepting(false);
-    }
-  };
-
   const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      messagesRef.current?.scrollTo({
-        top: messagesRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    });
+    setTimeout(() => {
+      messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: "smooth" });
+    }, 100);
   };
 
-  const selectConversation = (conversationId, isRequest = false) => {
-    setSelectedId(conversationId);
-    setSelectedIsRequest(isRequest);
-    setMessages([]);
-    setSearchParams({
-      conversationId,
-      tab: isRequest ? "requests" : "chats",
-    });
+  const selectConversation = (id, isReq) => {
+    setSelectedId(id);
+    setSelectedIsRequest(isReq);
+    setSearchParams({ conversationId: id, tab: isReq ? "requests" : "chats" });
   };
 
-  const selectedConversation = useMemo(
-    () =>
-      (selectedIsRequest ? requests : conversations).find(
-        (c) => getConversationId(c) === selectedId
-      ),
-    [conversations, requests, selectedId, selectedIsRequest]
-  );
-
-  const renderConversationItem = (conv, isRequest) => {
-    const cid = getConversationId(conv);
-    const other = isRequest
-      ? getRequestSender(conv, currentUserId)
-      : getOtherParticipant(conv, currentUserId);
-    const name =
-      other?.username ||
-      [other?.firstName, other?.lastName].filter(Boolean).join(" ").trim() ||
-      "Chat";
+  // --- RENDERS ---
+  const renderItem = (c, isReq) => {
+    const cid = getId(c);
+    const parts = c.participants || [];
+    const other = parts.find(p => getId(p) !== currentUserId) || c.participant;
+    const name = other?.username || "Usuario"; // Fallback simple
 
     return (
       <button
-        key={cid}
-        onClick={() => selectConversation(cid, isRequest)}
-        className={`w-100 text-start p-2 border rounded mb-2 ${
-          cid === selectedId && isRequest === selectedIsRequest
-            ? "bg-primary text-white"
-            : "bg-light"
-        }`}
+        key={cid} // Aquí la clave es única gracias a uniqueList()
+        onClick={() => selectConversation(cid, isReq)}
+        className={`w-100 text-start p-2 border rounded mb-2 ${cid === selectedId ? "bg-primary text-white" : "bg-light"}`}
       >
-        <div className="d-flex justify-content-between align-items-center">
-          <span>{name}</span>
-          {isRequest ? (
-            <span className={`badge ${cid === selectedId ? "bg-light text-primary" : "bg-warning text-dark"}`}>
-              Solicitud
-            </span>
-          ) : conv.unread ? (
-            <span className="badge bg-danger">Nuevo</span>
-          ) : null}
+        <div className="d-flex justify-content-between">
+            <span className="fw-bold">{name}</span>
+            {c.unread && <span className="badge bg-danger">!</span>}
         </div>
-        {conv.lastMessage ? (
-          <small className={cid === selectedId ? "text-white" : "text-muted"}>
-            {conv.lastMessage}
-          </small>
-        ) : null}
+        <small className="text-truncate d-block" style={{opacity: 0.8}}>
+            {c.lastMessage || "..."}
+        </small>
       </button>
     );
   };
 
-const renderMessage = (msg) => {
-  const isMine =
-    (msg?.sender?._id || msg?.sender)?.toString() ===
-    currentUserId?.toString();
+ const renderMessage = (msg) => {
+     const isMine = getId(msg.sender) === currentUserId;
+     const text = msg.content;
+     
+     // 1. Detección de Mensaje de Sistema / Match
+     if (msg.context?.type === 'PROJECT_MATCH') {
+         return (
+             <div key={getId(msg)} className="d-flex justify-content-center my-4">
+                 <div className="card border-0 shadow-sm bg-light" style={{maxWidth: '85%'}}>
+                    <div className="card-body p-3 d-flex align-items-center gap-3">
+                        {/* Icono */}
+                        <div className="rounded-circle bg-success bg-opacity-10 text-success p-2 d-flex align-items-center justify-content-center" style={{width: 40, height: 40}}>
+                             <i className="bi bi-briefcase-fill fs-5"></i>
+                        </div>
+                        
+                        <div className="flex-grow-1">
+                             <div className="small text-uppercase fw-bold text-success mb-0" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>
+                                Match Confirmado
+                             </div>
+                             <div className="fw-bold text-dark mb-1">
+                                {msg.context.projectTitle || "Proyecto"}
+                             </div>
+                             {/* Texto del sistema */}
+                             <div className="small text-muted border-start border-3 ps-2 fst-italic">
+                                "{text}"
+                             </div>
+                        </div>
+                    </div>
+                 </div>
+             </div>
+         );
+     }
 
-  // El backend guarda el texto en "content"
-  const text = msg.text || msg.content || "";
-
-  // 🔍 Detectar mensajes automáticos de colaboración
-  const acceptMatch = text.match(/acepto tu interes en "([^"]+)"/i);
-  const requestMatch = text.match(
-    /est[aá] interesado en colaborar en "([^"]+)"/i
-  );
-
-  const isCollab = !!acceptMatch || !!requestMatch;
-
-  if (isCollab) {
-    const projectTitle = (acceptMatch || requestMatch)[1];
-    const label = acceptMatch
-      ? "Colaboración confirmada"
-      : "Nuevo interés en tu proyecto";
-
-    return (
-      <div
-        key={msg._id || msg.id}
-        className="d-flex mb-3 justify-content-center"
-      >
-        <div
-          className="rounded-3"
-          style={{
-            maxWidth: "80%",
-            backgroundColor: "#f5f5f5",
-            border: "1px solid #e0e0e0",
-            padding: "8px 12px",
-            fontSize: "0.9rem",
-          }}
-        >
-          {/* Cajita tipo reply de WhatsApp */}
-          <div
-            style={{
-              borderLeft: "4px solid #25d366",
-              paddingLeft: 8,
-              marginBottom: 6,
-              backgroundColor: "#ffffff",
-              borderRadius: 6,
-            }}
-          >
-            <small className="text-muted d-block">{label}</small>
-            <strong className="d-block">{projectTitle}</strong>
-          </div>
-
-          {/* Texto principal del mensaje */}
-          <div>{text}</div>
+     // 2. Mensaje Normal
+     return (
+        <div key={getId(msg)} className={`d-flex mb-2 ${isMine ? "justify-content-end" : "justify-content-start"}`}>
+           <div 
+             className={`p-2 rounded-3 px-3 ${isMine ? "bg-primary text-white" : "bg-white border"}`} 
+             style={{maxWidth: "75%", boxShadow: isMine ? 'none' : '0 1px 2px rgba(0,0,0,0.05)'}}
+           >
+              {text}
+           </div>
         </div>
-      </div>
-    );
-  }
+     );
+  };
 
-  // 💬 Mensajes normales
-  const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
-  const avatar =
-    msg?.sender?.profilePicture &&
-    `${baseUrl}${msg.sender.profilePicture}`;
+  const selectedConv = (selectedIsRequest ? requests : conversations).find(c => getId(c) === selectedId);
 
   return (
-    <div
-      key={msg._id || msg.id}
-      className={`d-flex mb-2 ${
-        isMine ? "justify-content-end" : "justify-content-start"
-      }`}
-    >
-      {!isMine && (
-        <img
-          src={
-            avatar ||
-            "https://ui-avatars.com/api/?name=" +
-              encodeURIComponent(msg?.sender?.name || "U")
-          }
-          alt={msg?.sender?.name || "User"}
-          className="rounded-circle me-2"
-          style={{ width: 32, height: 32, objectFit: "cover" }}
-        />
-      )}
-
-      <div
-        className={`p-2 rounded-3 ${
-          isMine ? "bg-primary text-white" : "bg-light"
-        }`}
-        style={{ maxWidth: "75%" }}
-      >
-        {!isMine && (
-          <div className="fw-bold mb-1">
-            {msg?.sender?.name || msg?.sender?.username || "Usuario"}
-          </div>
-        )}
-        <div>{text}</div>
-      </div>
-    </div>
-  );
-};
-
-
-  return (
-    <div className="container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h2>Mensajes</h2>
-        <button className="btn btn-light" onClick={() => navigate(-1)}>
-          Volver
-        </button>
-      </div>
-
-      <div className="row" style={{ minHeight: 480 }}>
-        <div className="col-12 col-md-4">
-          <div className="border rounded p-2">
-            <h6>Solicitudes</h6>
-            {requests.length === 0 ? (
-              <p className="text-muted small">Sin solicitudes</p>
-            ) : (
-              requests.map((r) => renderConversationItem(r, true))
-            )}
-            <h6 className="mt-3">Chats</h6>
-            {conversations.length === 0 ? (
-              <p className="text-muted small">No tienes conversaciones.</p>
-            ) : (
-              conversations.map((c) => renderConversationItem(c, false))
-            )}
-          </div>
+    <div className="container py-4" style={{ height: "85vh" }}>
+      <div className="row h-100">
+        {/* SIDEBAR */}
+        <div className="col-md-4 h-100 overflow-auto border-end">
+           <h5 className="mb-3">Mensajes</h5>
+           {requests.length > 0 && (
+             <div className="mb-3">
+                <small className="text-muted">Solicitudes</small>
+                {requests.map(r => renderItem(r, true))}
+             </div>
+           )}
+           <div>
+              {conversations.map(c => renderItem(c, false))}
+              {conversations.length === 0 && <p className="text-muted">No hay chats activos.</p>}
+           </div>
         </div>
 
-        <div className="col-12 col-md-8 mt-3 mt-md-0">
-          <div
-            className="border rounded d-flex flex-column"
-            style={{ height: "100%" }}
-          >
-            {selectedConversation?.post &&
-              selectedConversation.post.category &&
-              selectedConversation.post.category.toLowerCase() ===
-                "colaboradores" && (
-                <div className="p-2 border-bottom d-flex justify-content-between align-items-center bg-light">
-                  <div>
-                    <strong>Proyecto:</strong> {selectedConversation.post.title}
-                  </div>
-                  {selectedConversation?.isPendingForMe && selectedIsRequest ? (
-                    <button
-                      className="btn btn-sm btn-success"
-                      onClick={handleAcceptRequest}
-                      disabled={accepting}
-                    >
-                      {accepting ? "Aceptando..." : "Aceptar colaboracion"}
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
-            {selectedIsRequest ? (
-              <div className="p-3">
-                {actionError && (
-                  <div className="alert alert-danger py-2">{actionError}</div>
-                )}
-                <p className="mb-3">
-                  {selectedConversation?.requestMessage ||
-                    "Solicitud de chat o colaboracion"}
-                </p>
-                {selectedConversation?.isPendingForMe ? (
-                  <div className="d-flex gap-2">
-                    <button
-                      className="btn btn-success"
-                      onClick={handleAcceptRequest}
-                      disabled={accepting}
-                    >
-                      {accepting ? "Aceptando..." : "Aceptar chat"}
-                    </button>
-                    <button
-                      className="btn btn-outline-secondary"
-                      onClick={handleIgnoreRequest}
-                      disabled={accepting}
-                    >
-                      Ignorar
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-muted small mb-0">
-                    Solo el owner puede aceptar esta colaboracion.
-                  </p>
-                )}
-              </div>
-            ) : (
+        {/* CHAT AREA */}
+        <div className="col-md-8 h-100 d-flex flex-column">
+           {!selectedId ? (
+              <div className="m-auto text-muted">Selecciona una conversación</div>
+           ) : (
               <>
-                <div
-                  ref={messagesRef}
-                  className="flex-grow-1 p-3 overflow-auto"
-                  style={{ minHeight: 300 }}
-                >
-                  {actionError && (
-                    <div className="alert alert-danger py-2">{actionError}</div>
-                  )}
-                  {loadingMessages ? (
-                    <p className="text-muted">Cargando mensajes...</p>
-                  ) : messages.length === 0 ? (
-                    <p className="text-muted">No hay mensajes todavia.</p>
-                  ) : (
-                    messages.map(renderMessage)
-                  )}
+                <div className="p-2 border-bottom bg-light">
+                   <strong>Chat con {selectedConv?.participants?.find(p => getId(p) !== currentUserId)?.username || "Usuario"}</strong>
+                </div>
+                
+                <div className="flex-grow-1 overflow-auto p-3" ref={messagesRef}>
+                   {loadingMessages ? "Cargando..." : messages.map(renderMessage)}
                 </div>
 
-                <form
-                  onSubmit={handleSend}
-                  className="p-3 border-top d-flex gap-2"
-                >
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Escribe un mensaje..."
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    disabled={!selectedId || sending}
-                  />
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={!selectedId || sending || !messageText.trim()}
-                  >
-                    {sending ? "Enviando..." : "Enviar"}
-                  </button>
-                </form>
+                {!selectedIsRequest && (
+                    <form onSubmit={handleSend} className="p-2 border-top d-flex gap-2">
+                        <input 
+                          className="form-control" 
+                          value={messageText} 
+                          onChange={e => setMessageText(e.target.value)}
+                          placeholder="Escribe algo..."
+                          disabled={sending}
+                        />
+                        <button className="btn btn-primary" disabled={sending}>Enviar</button>
+                    </form>
+                )}
               </>
-            )}
-          </div>
+           )}
         </div>
       </div>
     </div>

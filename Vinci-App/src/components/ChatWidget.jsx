@@ -4,6 +4,13 @@ import axios from "../api/axiosInstance";
 import { socket } from "../services/socket";
 import { useAuth } from "../context/AuthContext";
 
+// --- HELPERS SEGUROS ---
+const getId = (entity) => {
+  if (!entity) return "";
+  if (typeof entity === "string") return entity;
+  return entity._id || entity.id || "";
+};
+
 const getDisplayName = (user) => {
   if (!user) return "Usuario";
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
@@ -14,13 +21,7 @@ const getDisplayName = (user) => {
 
 const getUsernameHandle = (user) => (user?.username ? `@${user.username}` : "");
 
-const getId = (entity) =>
-  typeof entity === "object" && entity !== null
-    ? entity._id || entity.id
-    : entity;
-
-const getConversationId = (conversation) =>
-  conversation?._id || conversation?.id || "";
+const getConversationId = (conversation) => getId(conversation);
 
 const getOtherParticipant = (conversation, currentUserId) => {
   const participants = conversation?.participants || [];
@@ -74,15 +75,9 @@ const formatTimeShort = (dateString) => {
 const ChatWidget = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const currentUserId = user?._id || user?.id;
+  const currentUserId = getId(user);
 
   const [isOpen, setIsOpen] = useState(false);
-
-  // panelView:
-  // - "listChats": lista principal de chats (Chats + link a solicitudes)
-  // - "listRequests": lista de solicitudes de mensajes
-  // - "chatDetail": vista de chat abierto
-  // - "requestDetail": vista de solicitud abierta
   const [panelView, setPanelView] = useState("listChats");
 
   const [conversations, setConversations] = useState([]);
@@ -96,8 +91,18 @@ const ChatWidget = () => {
   const [actionError, setActionError] = useState("");
 
   const messagesRef = useRef(null);
-
   const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+
+  // --- DEDUPLICADOR DE LISTAS ---
+  const uniqueList = (list) => {
+    const seen = new Set();
+    return list.filter((item) => {
+      const id = getId(item);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
 
   const normalizeConversation = (conv) => {
     if (!conv) return conv;
@@ -106,12 +111,12 @@ const ChatWidget = () => {
     const requestedById = getId(conv.requestedBy);
 
     const unread = unreadBy.some(
-      (id) => id?.toString() === currentUserId?.toString()
+      (id) => getId(id).toString() === currentUserId?.toString()
     );
     const isOwner = ownerId?.toString() === currentUserId?.toString();
     const isRequester =
       requestedById?.toString() === currentUserId?.toString();
-    const isPendingForMe = conv.status === "pending" && isOwner;
+    const isPendingForMe = (conv.status || "active") === "pending" && isOwner;
 
     return { ...conv, unread, isOwner, isRequester, isPendingForMe };
   };
@@ -145,17 +150,15 @@ const ChatWidget = () => {
     if (!currentUserId) return;
     try {
       const { data } = await axios.get("/chats");
-      const list = Array.isArray(data?.conversations)
-        ? data.conversations.map(normalizeConversation)
-        : [];
-      const reqs = Array.isArray(data?.requests)
-        ? data.requests.map(normalizeConversation)
-        : [];
+      const list = Array.isArray(data?.conversations) ? data.conversations : [];
+      const reqs = Array.isArray(data?.requests) ? data.requests : [];
 
-      const visibleRequests = reqs.filter((r) => r.isPendingForMe);
-      const visibleConversations = list.filter(
-        (c) => c.status !== "pending"
-      );
+      // Normalizar y Deduplicar
+      const normList = uniqueList(list.map(normalizeConversation));
+      const normReqs = uniqueList(reqs.map(normalizeConversation));
+
+      const visibleRequests = normReqs.filter((r) => r.isPendingForMe);
+      const visibleConversations = normList.filter((c) => c.status !== "pending");
 
       setConversations(visibleConversations);
       setRequests(visibleRequests);
@@ -226,10 +229,14 @@ const ChatWidget = () => {
         content: messageText.trim(),
       });
       setMessageText("");
+      
+      // 1. Agregar mensaje manualmente (Evita duplicados por race condition)
       if (data?.message) {
         setMessages((prev) => [...prev, data.message]);
         scrollToBottom();
       }
+
+      // 2. Actualizar lista de conversaciones (subir al inicio)
       if (data?.conversation) {
         const normalized = normalizeConversation(data.conversation);
         setConversations((prev) => {
@@ -258,7 +265,6 @@ const ChatWidget = () => {
         `/chats/${selectedId}/accept-collab`
       );
 
-      // Eliminamos de solicitudes
       setRequests((prev) =>
         prev.filter((r) => getConversationId(r) !== selectedId)
       );
@@ -276,7 +282,6 @@ const ChatWidget = () => {
         });
       }
 
-      // Abrimos el chat ya aceptado
       await openChatDetail(convId);
     } catch (err) {
       const msg =
@@ -311,6 +316,106 @@ const ChatWidget = () => {
       setHandlingRequest(false);
     }
   };
+
+  // ===== SOCKETS =====
+  useEffect(() => {
+    const onChatMessageEvent = (e) => {
+      const { conversationId, conversation, message } = e.detail || {};
+      const cid = conversationId || getConversationId(conversation);
+      if (!cid) return;
+
+      // 🛑 FIX: Ignorar si soy el remitente (evita duplicados)
+      const senderId = getId(message?.sender);
+      if (senderId.toString() === currentUserId.toString()) {
+        return; 
+      }
+
+      const normalized = conversation ? normalizeConversation(conversation) : null;
+
+      if (normalized?.status === "pending") {
+        if (!normalized.isPendingForMe) return;
+        setRequests((prev) => {
+          const exists = prev.some((r) => getConversationId(r) === cid);
+          if (exists) return prev;
+          return [normalized, ...prev];
+        });
+        return;
+      }
+
+      setRequests((prev) =>
+        prev.filter((r) => getConversationId(r) !== cid)
+      );
+      setConversations((prev) => {
+        const others = prev.filter((c) => getConversationId(c) !== cid);
+        const existing = prev.find((c) => getConversationId(c) === cid);
+        const updated = normalized || normalizeConversation(existing);
+        return updated ? [updated, ...others] : prev;
+      });
+
+      if (panelView === "chatDetail" && cid === selectedId && message) {
+        setMessages((prev) => {
+          const exists = prev.some(
+            (m) => String(getId(m)) === String(getId(message))
+          );
+          if (exists) return prev;
+          return [...prev, message];
+        });
+        scrollToBottom();
+      }
+    };
+
+    const onCollabRequestEvent = (e) => {
+      const conv = e.detail?.conversation || e.detail;
+      if (!conv) return;
+      const normalized = normalizeConversation(conv);
+      if (!normalized.isPendingForMe) return;
+      setRequests((prev) => {
+        const exists = prev.some(
+          (r) => getConversationId(r) === getConversationId(normalized)
+        );
+        if (exists) return prev;
+        return [normalized, ...prev];
+      });
+    };
+
+    const onCollabIgnoredEvent = (e) => {
+      const { conversationId } = e.detail || {};
+      if (!conversationId) return;
+      setRequests((prev) =>
+        prev.filter((r) => getConversationId(r) !== conversationId)
+      );
+      setConversations((prev) =>
+        prev.filter((c) => getConversationId(c) !== conversationId)
+      );
+      if (selectedId === conversationId) {
+        handleBackFromDetail();
+      }
+    };
+
+    window.addEventListener("vinci:chat-message", onChatMessageEvent);
+    window.addEventListener("vinci:collab-request", onCollabRequestEvent);
+    window.addEventListener("vinci:collab-ignored", onCollabIgnoredEvent);
+
+    return () => {
+      window.removeEventListener("vinci:chat-message", onChatMessageEvent);
+      window.removeEventListener("vinci:collab-request", onCollabRequestEvent);
+      window.removeEventListener("vinci:collab-ignored", onCollabIgnoredEvent);
+    };
+  }, [currentUserId, panelView, selectedId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    fetchConversations();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setPanelView("listChats");
+      setSelectedId("");
+      setMessages([]);
+      setActionError("");
+    }
+  }, [isOpen]);
 
   const renderConversationRow = (conv, isRequest = false) => {
     const cid = getConversationId(conv);
@@ -402,7 +507,7 @@ const ChatWidget = () => {
 
     return (
       <div
-        key={msg._id || msg.id}
+        key={getId(msg)} // KEY STRING SEGURA
         className={
           "chatw-msg-row " +
           (isMine ? "chatw-msg-row--me" : "chatw-msg-row--other")
@@ -416,6 +521,8 @@ const ChatWidget = () => {
     );
   };
 
+  if (!currentUserId) return null;
+
   const resolveOther = (conv) => {
     if (!conv) return null;
     if (conv.status === "pending") {
@@ -423,125 +530,15 @@ const ChatWidget = () => {
     }
     return getOtherParticipant(conv, currentUserId);
   };
-
   const other = resolveOther(selectedConversation);
-
   const otherName = getDisplayName(other);
   const otherUsername = getUsernameHandle(other);
-
-  const otherAvatar =
-    other?.profilePicture && `${baseUrl}${other.profilePicture}`;
-
-  // ===== EFFECTS =====
-  useEffect(() => {
-    if (!currentUserId) return;
-    fetchConversations();
-  }, [currentUserId]);
-
-  useEffect(() => {
-    const onChatMessageEvent = (e) => {
-      const { conversationId, conversation, message } = e.detail || {};
-      const cid = conversationId || getConversationId(conversation);
-      if (!cid) return;
-      const normalized = conversation ? normalizeConversation(conversation) : null;
-
-      // si es pending para mi, va a solicitudes
-      if (normalized?.status === "pending") {
-        if (!normalized.isPendingForMe) return;
-        setRequests((prev) => {
-          const exists = prev.some((r) => getConversationId(r) === cid);
-          if (exists) return prev;
-          return [normalized, ...prev];
-        });
-        return;
-      }
-
-      // si es chat normal
-      setRequests((prev) =>
-        prev.filter((r) => getConversationId(r) !== cid)
-      );
-      setConversations((prev) => {
-        const others = prev.filter((c) => getConversationId(c) !== cid);
-        const existing = prev.find((c) => getConversationId(c) === cid);
-        const updated = normalized || normalizeConversation(existing);
-        return updated ? [updated, ...others] : prev;
-      });
-
-      // si justo estamos mirando ese chat => agregamos mensaje
-      if (panelView === "chatDetail" && cid === selectedId && message) {
-        setMessages((prev) => {
-          const exists = prev.some(
-            (m) => (m._id || m.id) === (message._id || message.id)
-          );
-          if (exists) return prev;
-          return [...prev, message];
-        });
-        scrollToBottom();
-      }
-    };
-
-    const onCollabRequestEvent = (e) => {
-      const conv = e.detail?.conversation || e.detail;
-      if (!conv) return;
-      const normalized = normalizeConversation(conv);
-      if (!normalized.isPendingForMe) return;
-      setRequests((prev) => {
-        const exists = prev.some(
-          (r) => getConversationId(r) === getConversationId(normalized)
-        );
-        if (exists) return prev;
-        return [normalized, ...prev];
-      });
-    };
-
-    const onCollabIgnoredEvent = (e) => {
-      const { conversationId } = e.detail || {};
-      if (!conversationId) return;
-      setRequests((prev) =>
-        prev.filter((r) => getConversationId(r) !== conversationId)
-      );
-      setConversations((prev) =>
-        prev.filter((c) => getConversationId(c) !== conversationId)
-      );
-      if (selectedId === conversationId) {
-        handleBackFromDetail();
-      }
-    };
-
-    window.addEventListener("vinci:chat-message", onChatMessageEvent);
-    window.addEventListener("vinci:collab-request", onCollabRequestEvent);
-    window.addEventListener("vinci:collab-ignored", onCollabIgnoredEvent);
-
-    return () => {
-      window.removeEventListener("vinci:chat-message", onChatMessageEvent);
-      window.removeEventListener(
-        "vinci:collab-request",
-        onCollabRequestEvent
-      );
-      window.removeEventListener(
-        "vinci:collab-ignored",
-        onCollabIgnoredEvent
-      );
-    };
-  }, [currentUserId, panelView, selectedId]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setPanelView("listChats");
-      setSelectedId("");
-      setMessages([]);
-      setActionError("");
-    }
-  }, [isOpen]);
-
-  if (!currentUserId) return null;
+  const otherAvatar = other?.profilePicture && `${baseUrl}${other.profilePicture}`;
 
   return (
     <div className="chatw-container">
-      {/* panel desplegable */}
       {isOpen && (
         <div className="chatw-panel shadow-lg">
-          {/* HEADER segun vista */}
           {panelView === "listChats" && (
             <div className="chatw-header">
               <div className="chatw-header-left">
@@ -616,7 +613,6 @@ const ChatWidget = () => {
             </div>
           )}
 
-          {/* CONTENIDO */}
           <div className="chatw-body">
             {panelView === "listChats" && (
               <>
@@ -742,7 +738,6 @@ const ChatWidget = () => {
         </div>
       )}
 
-      {/* BOTON FLOTANTE (colapsado) */}
       <button
         type="button"
         className="chatw-toggle shadow-lg"

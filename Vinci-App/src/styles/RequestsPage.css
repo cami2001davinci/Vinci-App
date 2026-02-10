@@ -1,0 +1,410 @@
+/* src/styles/RequestsPage.css */
+
+/* === Tarjeta Principal === */
+.request-card {
+  background-color: white;
+  border: 2px solid #000000;
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 1.5rem;
+  position: relative;
+  overflow: hidden; /* Evita desbordes */
+}
+
+.request-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 1);
+}
+
+/* === LAYOUT RESPONSIVO (Flexbox es mejor aquí que Grid) === */
+
+/* 1. MÓVIL (Por defecto) */
+.request-content {
+  display: flex;
+  flex-direction: column; /* Elementos uno debajo del otro */
+  align-items: center;    /* Todo centrado */
+  text-align: center;
+  gap: 0.75rem;           /* Espacio reducido entre elementos */
+  width: 100%;
+}
+
+/* 2. TABLET Y ESCRITORIO (>= 768px) */
+@media (min-width: 768px) {
+  .request-content {
+    flex-direction: row;       /* Elementos en línea */
+    align-items: center;       /* Centrado vertical */
+    text-align: left;          /* Texto a la izquierda */
+    justify-content: space-between; /* Esparce contenido: Icono...Info...Botones */
+    gap: 1.5rem;               /* Espacio entre columnas */
+  }
+}
+
+/* === BLOQUE 1: AVATAR / ICONO === */
+/* Contenedor para controlar el ancho si hace falta */
+.request-media {
+  flex-shrink: 0;
+}
+
+.request-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 3px solid #000000;
+  box-shadow: 3px 3px 0 rgba(0,0,0,1);
+  background-color: #f3f4f6;
+  /* Margen pequeño abajo solo en móvil para separar del título */
+  margin-bottom: 2rem; 
+}
+
+.manage-icon {
+  width: 72px;
+  height: 72px;
+  background-color: #fb923c; /* Naranja original */
+  border: 3px solid #000000;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  color: #000000;
+  box-shadow: 4px 4px 0 #000;
+  margin-bottom: 0.25rem; /* Margen reducido en móvil */
+}
+
+@media (min-width: 768px) {
+  .request-avatar, .manage-icon {
+    margin-bottom: 0; /* En PC no necesita margen abajo */
+  }
+}
+
+/* === BLOQUE 2: INFO CENTRAL === */
+.request-info {
+  flex-grow: 1; /* Ocupa todo el espacio disponible */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem; /* Espacio muy pequeño entre líneas de texto */
+  min-width: 0; /* Evita que textos largos rompan el flex */
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .request-info {
+    align-items: flex-start; /* En PC alineado a la izquierda */
+    width: auto;
+  }
+}
+
+/* Línea de Nombre */
+.request-header-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 768px) {
+  .request-header-line {
+    justify-content: flex-start;
+  }
+}
+
+.request-name {
+  font-family: "degular", sans-serif;
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #000000;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.request-username {
+  font-size: 0.9rem;
+  color: #6b7280;
+  font-weight: 500;
+  margin: 0;
+}
+
+.request-degree{
+  font-weight: bold;
+  color: #6b7280;
+  text-transform: uppercase;
+}
+
+/* Título Gestión */
+.manage-title {
+  font-family: "degular", sans-serif;
+  font-size: 1.25rem;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #000000;
+  line-height: 1.1;
+  margin-bottom: 0.2rem;
+}
+
+/* Meta info carrera */
+.manage-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-family: "degular", sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #9ca3af;
+  flex-wrap: wrap;
+  justify-content: center; /* Centrado en móvil */
+}
+
+@media (min-width: 768px) {
+  .manage-meta-row {
+    justify-content: flex-start;
+  }
+}
+
+/* Pills */
+.project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #e0f2fe;
+  border: 2px solid #000000;
+  border-radius: 12px;
+  padding: 0.4rem 1rem;
+  margin-top: 0.5rem;
+  box-shadow: 3px 3px 0 rgba(0,0,0,1);
+  width: 100%; /* Ancho completo en móvil */
+  justify-content: center;
+  font-weight: bold;
+}
+.project-pill.pending-state {
+  background-color: #fb923c; /* Fondo Naranja pastel */
+  color: #ffffff;            /* Texto Naranja ladrillo */
+  justify-content: center;   /* Texto centrado */
+  width: 100%;               /* Ancho completo */
+  margin-top: 0;             /* Sin margen superior extra */
+  cursor: default;           /* Cursor normal (no es clickeable) */
+}
+
+@media (min-width: 768px) {
+  .project-pill {
+    width: fit-content;
+    justify-content: flex-start;
+    box-shadow: 2px 2px 0 rgba(0,0,0,1);
+  }
+}
+
+.project-label {
+  font-family: "degular", sans-serif;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #0284c7;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.project-pill-title {
+  font-family: "degular", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-style: italic;
+  color: #000000;
+}
+
+.manage-badge-pink {
+  display: inline-block;
+  background-color: #f472b6;
+  border: 2px solid #000000;
+  border-radius: 99px;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  font-style: italic;
+  color: #000000;
+  box-shadow: 2px 2px 0 #000;
+  margin-top: 0.5rem;
+}
+
+/* === BLOQUE 3: BOTONES === */
+.request-actions-container {
+  display: flex;
+  flex-direction: column; /* En móvil siempre apilados */
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .request-actions-container {
+    width: auto; /* En PC ancho automático */
+    flex-direction: row; /* Por defecto al lado */
+    margin-top: 0;
+  }
+  
+  /* Clase especial para Gestión: Botones apilados verticalmente en PC */
+  .actions-vertical-desktop {
+    flex-direction: column !important;
+    min-width: 180px;
+  }
+}
+
+.req-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  border: 2px solid #000000 !important;
+  font-size: 0.85rem;
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 #000000 !important;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .req-btn {
+    width: 100%; /* Ocupan el ancho de su contenedor padre */
+    padding: 0 1.5rem;
+  }
+  
+  /* En Recibidos/Enviados los botones van lado a lado, no full width */
+  .request-actions-container:not(.actions-vertical-desktop) .req-btn {
+     width: auto; 
+  }
+}
+
+.req-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 #000000 !important;
+}
+
+/* Colores */
+.req-btn-decline { background-color: #ffffff !important; color: #000000 !important; }
+.req-btn-accept { background-color: #4f46e5 !important; color: #ffffff !important; }
+.btn-chat-green { background-color: #10b981 !important; color: #ffffff !important; }
+.btn-manage-close { background-color: #10b981 !important; color: #fff !important; }
+.btn-manage-view { background-color: #ffffff !important; color: #000 !important; }
+
+/* === LISTADO DESPLEGABLE === */
+.applicants-container {
+  margin-top: 1.5rem;
+  background-color: #ffffff;
+  border: 3px solid #000000;
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 8px 8px 0 #0ea5e9; 
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.applicants-title {
+  font-family: "degular", sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  font-style: italic;
+  color: #0ea5e9;
+  text-transform: uppercase;
+  margin-bottom: 1.2rem;
+}
+
+/* Tarjeta Aplicante */
+.applicant-card {
+  display: flex;
+  flex-direction: column; /* Móvil: Apilado */
+  gap: 1rem;
+  align-items: center;
+  background-color: #ffffff;
+  border: 3px solid #000000;
+  border-radius: 20px;
+  padding: 1rem;
+  margin-bottom: 0.8rem;
+  text-align: center;
+}
+
+@media (min-width: 600px) {
+  .applicant-card {
+    flex-direction: row; /* Tablet/PC: Horizontal */
+    justify-content: space-between;
+    text-align: left;
+  }
+}
+
+.applicant-main-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  .applicant-main-info {
+    flex-direction: row;
+  }
+}
+
+.applicant-avatar-large {
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  border: 2px solid #000000;
+  object-fit: cover;
+  background-color: #f3f4f6;
+
+  /* 👇 AGREGA ESTO PARA EL EFECTO "SOBRESALIENTE" 👇 */
+  box-shadow: 3px 3px 0 #000000; 
+}
+
+.applicant-name-large {
+  font-family: "degular", sans-serif;
+  font-size: 1.1rem;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #000000;
+  line-height: 1;
+  margin-bottom: 0.2rem;
+}
+
+.applicant-role-large {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #6b7280;
+  letter-spacing: 0.5px;
+}
+
+.status-pill {
+  padding: 0.4rem 1.2rem;
+  border-radius: 99px;
+  border: 2px solid #000000;
+  font-size: 0.8rem;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .status-pill { width: auto; }
+}
+
+.status-pill.accepted { background-color: #10b981; color: #ffffff; text-shadow: 1px 1px 0 #000; }
+.status-pill.pending { background-color: #fb923c; color: #000000; }
+.status-pill.rejected { background-color: #94a3b8; color: #ffffff; text-shadow: 1px 1px 0 #000; }
