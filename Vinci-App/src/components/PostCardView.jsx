@@ -79,19 +79,16 @@ export default function PostCardView({ post }) {
         {showComments && (
           <div className="mt-3">
             <CommentForm
-              postId={post._id}
-              onNewComment={() => {
-                // recarga CommentsList localmente
-                setCommentsVersion((x) => x + 1);
-                // y actualiza el contador inmediatamente
-                setCommentsCount((prev) => prev + 1);
-              }}
-            />
+      postId={post._id}
+      onNewComment={() => {
+        setCommentsVersion((x) => x + 1);
+      }}
+    />
 
-            <CommentsList
-              postId={post._id}
-              key={`${post._id}-${commentsVersion}`}
-            />
+    <CommentsList
+      postId={post._id}
+      key={`${post._id}-${commentsVersion}`}
+    />
           </div>
         )}
       </div>

@@ -1,4 +1,3 @@
-// src/App.jsx
 import {
   BrowserRouter as Router,
   Routes,
@@ -24,7 +23,7 @@ import NotificationBridge from "./components/NotificationBridge";
 import Welcome from "./pages/Welcome";
 import SearchPage from "./pages/SearchPage";
 import RequestsPage from "./pages/RequestsPage";
-
+import { ConfirmProvider } from './context/ConfirmContext'; 
 function App() {
   // Logs básicos de conexión/desconexión
   useEffect(() => {
@@ -83,150 +82,153 @@ function App() {
 
   return (
     <Router>
-      {/* Bridge global para reproducir sonido cuando llega "vinci:notification" */}
-      <NotificationBridge />
-
-      <Routes>
-        {/* Rutas públicas */}
-        <Route
-          path="/login"
-          element={
-            <>
-              <Login />
-            </>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <>
-              <Register />
-            </>
-          }
-        />
-
-        <Route path="/welcome" element={<Welcome />} />
-
-        {/* Rutas protegidas con layout principal */}
+      {/* AQUÍ CONECTAMOS EL PROVIDER GLOBALMENTE */}
+      <ConfirmProvider>
         
-        <Route
-          path="/"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <Home />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+        {/* Bridge global para reproducir sonido cuando llega "vinci:notification" */}
+        <NotificationBridge />
 
-        <Route
-          path="/requests" 
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <RequestsPage /> 
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+        <Routes>
+          {/* Rutas públicas */}
+          <Route
+            path="/login"
+            element={
+              <>
+                <Login />
+              </>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <>
+                <Register />
+              </>
+            }
+          />
 
-        <Route
-          path="/profile/:id"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <UserProfilePage />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route path="/welcome" element={<Welcome />} />
 
-        <Route
-          path="/posts/:id"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <PostPage />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          {/* Rutas protegidas con layout principal */}
+          
+          <Route
+            path="/"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <Home />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-          path="/degrees/:slug"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <DegreePage />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route
+            path="/requests" 
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <RequestsPage /> 
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-          path="/dashboard"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <Dashboard />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route
+            path="/profile/:id"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <UserProfilePage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-          path="/notifications"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <NotificationsPage />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route
+            path="/posts/:id"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <PostPage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-          path="/construction"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <Construction />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route
+            path="/degrees/:slug"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <DegreePage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-          path="/chats"
-          element={
-            <PrivateRoute>
-              <AppLayout>
-                <ChatsPage />
-              </AppLayout>
-            </PrivateRoute>
-          }
-        />
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <Dashboard />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        <Route
-  path="/search"
-  element={
-    <PrivateRoute>
-      <AppLayout>
-        <SearchPage />
-      </AppLayout>
-    </PrivateRoute>
-  }
-/>
+          <Route
+            path="/notifications"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <NotificationsPage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
+          <Route
+            path="/construction"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <Construction />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        {/* Redirección vacía a "/" */}
-        {/* Redirección vacía a la pantalla de bienvenida */}
-        <Route path="" element={<Navigate to="/welcome" />} />
+          <Route
+            path="/chats"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <ChatsPage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
 
-        {/* 404 */}
-        <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
-      </Routes>
+          <Route
+            path="/search"
+            element={
+              <PrivateRoute>
+                <AppLayout>
+                  <SearchPage />
+                </AppLayout>
+              </PrivateRoute>
+            }
+          />
+
+          {/* Redirección vacía a la pantalla de bienvenida */}
+          <Route path="" element={<Navigate to="/welcome" />} />
+
+          {/* 404 */}
+          <Route path="*" element={<h1>404 - Página no encontrada</h1>} />
+        </Routes>
+      
+      </ConfirmProvider> 
     </Router>
   );
 }

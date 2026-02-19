@@ -1,124 +1,89 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "../api/axiosInstance";
+import UserAvatar from "./UserAvatar"; // 👈 1. Importamos el componente
+import "../styles/Comments.css";
 
 const CommentForm = ({ postId, parentComment = null, onNewComment }) => {
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // 👇 Aquí obtenemos 'user', no 'author'
   const { user } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (isSubmitting) return;
-
-    if (!postId) {
-      console.error("Falta postId en CommentForm");
-      setError("Error interno: falta ID del post");
-      return;
-    }
-
+    if (!postId) return;
     if (!user) {
-      setError("Tenés que iniciar sesión para comentar.");
+      setError("Inicia sesión para comentar.");
       return;
     }
-
+    
     const trimmed = content.trim();
-    if (!trimmed) {
-      setError("El comentario no puede estar vacío.");
-      return;
-    }
+    if (!trimmed) return;
 
+    // 🚀 OPTIMISTIC UI: Guardamos el texto y limpiamos el input YA MISMO
+    const contentToSend = trimmed;
+    setContent(""); 
     setError("");
     setIsSubmitting(true);
 
     try {
-      const payload = {
-        content: trimmed,
-        postId,
-      };
-      if (parentComment) {
-        payload.parentComment = parentComment;
-      }
+      const payload = { content: contentToSend, postId };
+      if (parentComment) payload.parentComment = parentComment;
 
-      // ✅ ahora guardamos la respuesta
       const { data: newComment } = await axios.post("/comments", payload);
+      
+      // El input ya está limpio, así que solo notificamos
+      if (onNewComment) onNewComment(newComment);
 
-      // limpiamos el textarea
-      setContent("");
-
-      // callback local (PostPage / PostCard)
-      if (typeof onNewComment === "function") {
-        onNewComment(newComment);
-      }
-
-      // ✅ evento global para que cualquier PostCard actualice el contador
+      // Disparamos evento global para que Socket/UI se enteren
       window.dispatchEvent(
         new CustomEvent("vinci:post-comment", {
-          detail: {
-            postId,
-            newComment, // 👈 acá va el comentario completo, NO solo el id
-          },
+          detail: { postId, newComment },
         })
       );
+
     } catch (err) {
-      console.error("Error al enviar comentario:", err);
-      const msg =
-        err?.response?.data?.message ||
-        "No se pudo publicar el comentario. Intentá de nuevo.";
-      setError(msg);
+      console.error(err);
+      // ⚠️ ROLLBACK: Si falló, devolvemos el texto al input
+      setContent(contentToSend);
+      setError("Error al comentar. Intenta de nuevo.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Avatar del usuario como en Facebook
-  const avatarSrc = user?.profilePicture
-    ? `${import.meta.env.VITE_SERVER_URL || "http://localhost:3000"}${
-        user.profilePicture
-      }`
-    : "/default-avatar.png";
-
   return (
-    <form onSubmit={handleSubmit} className="mt-2">
-      {error && <p className="text-danger small mb-1">{error}</p>}
-
-      <div className="d-flex align-items-start gap-2">
-        {/* Avatar del usuario logueado */}
-        <img
-          src={avatarSrc}
-          alt={user?.username || "Usuario"}
-          className="rounded-circle"
-          style={{
-            width: "32px",
-            height: "32px",
-            objectFit: "cover",
-          }}
+    <form onSubmit={handleSubmit} className="neo-comment-form">
+      {/* 👇 CORRECCIÓN AQUÍ: 
+          Usamos la variable 'user' que viene del useAuth(), no 'author'.
+      */}
+      <UserAvatar 
+        user={user} 
+        className="neo-comment-avatar" 
+      />
+      
+      <div style={{ flexGrow: 1 }}>
+        <input
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder={parentComment ? "Escribe una respuesta..." : "Deja tu comentario..."}
+          className="neo-comment-input"
+          disabled={isSubmitting}
         />
-
-        <div className="flex-grow-1">
-          <input
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              parentComment
-                ? "Responder a este comentario..."
-                : "Escribe un comentario..."
-            }
-            className="w-100 border p-2 rounded mb-1 form-control"
-            disabled={isSubmitting}
-          />
-
-          <button
-            type="submit"
-            className="btn btn-primary btn-sm"
-            disabled={isSubmitting || !content.trim()}
-          >
-            {isSubmitting ? "Publicando..." : "Comentar"}
-          </button>
-        </div>
+        {error && <p className="text-danger small mt-1 fw-bold">{error}</p>}
       </div>
+
+      <button
+        type="submit"
+        className="neo-comment-submit-btn"
+        disabled={isSubmitting || (!content.trim() && !isSubmitting)}
+      >
+        {isSubmitting ? "..." : "ENVIAR"}
+      </button>
     </form>
   );
 };

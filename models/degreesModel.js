@@ -6,6 +6,11 @@ const degreeSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  color: {
+    type: String,
+    default: '#000000', // Color por defecto (negro) si no se especifica
+    required: true
+  },
   slug: {
     type: String,
     required: true,

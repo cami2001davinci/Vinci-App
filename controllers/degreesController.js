@@ -35,6 +35,7 @@
 import Degree from '../models/degreesModel.js';
 import Post from '../models/postsModel.js';
 import User from '../models/usersModel.js';
+import { getColorForDegree } from '../src/config/degreeColors.js';
 
 // LISTAR TODAS LAS CARRERAS (lo que ya tenías)
 export const getAllDegrees = async (req, res) => {
@@ -58,7 +59,10 @@ export const createDegree = async (req, res) => {
     const exists = await Degree.findOne({ slug });
     if (exists) return res.status(400).json({ message: 'Esa carrera ya existe' });
 
-    const newDegree = new Degree({ name, slug, description });
+    // 👇 AQUI APLICAMOS LA LOGICA AUTOMÁTICA
+    const color = getColorForDegree(name);
+
+    const newDegree = new Degree({ name, slug, description, color });
     await newDegree.save();
 
     res.status(201).json(newDegree);

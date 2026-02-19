@@ -1,0 +1,291 @@
+/* src/styles/PostCard.css */
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+   font-family: 'Degular', sans-serif, Arial;
+
+}
+
+/* === CONTENEDOR PRINCIPAL === */
+.neo-post-card {
+  background-color: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 16px;
+  box-shadow: 6px 6px 0px #000000;
+  margin-bottom: 1.5rem;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Barra superior (Color dinámico inyectado por JS) */
+.neo-post-card__color-bar {
+  height: 8px;
+  width: 100%;
+  border-bottom: 2px solid #000000;
+  border-radius: 14px 14px 0 0;
+}
+
+/* === HEADER === */
+.neo-post-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1rem 1.25rem;
+  background-color: #ffffff;
+}
+
+/* Contenedor Izquierdo (Avatar + Textos) */
+.neo-post-card__author-info {
+  display: flex;
+  align-items: flex-start; /* Alineado arriba para manejar multilínea */
+  gap: 16px;
+}
+
+/* === AVATAR NEOBRUTALISTA (Nuevo estilo) === */
+/* src/styles/PostCard.css */
+
+/* src/styles/PostCard.css */
+
+/* 1. ESTILOS COMPARTIDOS (TAMAÑO Y FORMA) */
+/* Se aplica tanto a la FOTO como a las INICIALES */
+.neo-post-card__avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  border: 2px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  object-fit: cover; /* Para la foto */
+  flex-shrink: 0;    /* Para que no se aplaste */
+}
+
+/* 2. ESTILOS SOLO PARA INICIALES (Cuando es un DIV) */
+.neo-post-card__avatar.neo-avatar-initials {
+  /* Aquí sí activamos el Flexbox para centrar la letra */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+  /* Tipografía estilo Google */
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: #010101;
+  text-transform: uppercase;
+  user-select: none;
+  line-height: 1;
+  padding-top: 2px;
+}
+
+/* Fila 1: Nombre + Usuario */
+.neo-post-card__identity-row {
+  display: flex;
+  align-items: baseline; /* Alinea la base del texto */
+  gap: 8px;
+  flex-wrap: wrap;
+  line-height: 1.1;
+}
+
+.neo-post-card__fullname {
+  font-family: "Degular", sans-serif;
+  font-weight: 900; /* Extra bold */
+  font-size: 1.1rem;
+  color: #000000;
+  text-transform: uppercase;
+}
+
+.neo-post-card__username {
+  font-size: 0.9rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+/* Fila 2: Badges de Carrera + Categoría */
+.neo-post-card__badges-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Badge de Carrera (Rectángulo color + borde negro + texto blanco) */
+.neo-degree-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 2px solid #000000;
+  border-radius: 4px; /* Levemente redondeado o 0px si quieres muy cuadrado */
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #ffffff; /* Letra blanca */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+  box-shadow: 1px 1px 0px #000000; /* Sombra sutil opcional */
+}
+
+/* Hashtag de Categoría */
+.neo-category-hashtag {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-style: italic;
+}
+
+/* === RESTO DE COMPONENTES (Fecha, Body, Footer) === */
+.neo-date-pill {
+  padding: 4px 12px;
+  border: 2px solid #000000;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #000000;
+  background-color: #ffffff;
+  box-shadow: 2px 2px 0px #000000;
+  white-space: nowrap;
+  text-transform: uppercase;
+  font-style: italic;
+}
+
+.neo-post-card__body {
+  padding: 1.25rem;
+  background-color: #ffffff;
+}
+
+.neo-input {
+  width: 100%;
+  border: 2px solid #000000;
+  border-radius: 8px;
+  padding: 10px;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.neo-post-card__footer {
+
+  display: flex;
+
+  gap: 1rem;
+
+  padding: 1rem 1.25rem;
+
+  border-top: 2px solid #000000;
+
+  background-color: #f9fafb;
+
+  border-radius: 0 0 14px 14px;
+
+}
+.neo-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background-color: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 99px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px #000000;
+  transition: all 0.1s ease;
+}
+
+.neo-action-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.neo-action-btn--liked {
+  background-color: #fbbf24;
+}
+
+.neo-post-content-text {
+  /* Barra lateral de color (el color se inyecta por JS) */
+  border-left: 6px solid #000000;
+  margin-left: 1rem;
+  /* Espaciado: */
+  padding-left: 1rem; /* Separación horizontal del borde */
+  padding-top: 0.25rem;  /* "Apenas centrado": Aire arriba */
+  padding-bottom: 0.25rem; /* "Apenas centrado": Aire abajo */
+  
+  /* Tipografía: */
+  font-size: 1.15rem; /* Un poco más grande que el estándar, pero no gigante */
+  font-weight: 400;   /* "Sin negrita" (Normal) */
+  line-height: 1.5;   /* Mejor lectura */
+  color: #000000;
+  
+  /* Comportamiento */
+  white-space: pre-line;
+  margin-bottom: 1.5rem;
+  
+  /* Flex para asegurar alineación si el texto es muy corto (opcional, pero ayuda al centrado) */
+  display: flex;
+  align-items: center; 
+  min-height: 2rem; /* Altura mínima para que la barra siempre se vea bien */
+}
+
+/* Ajuste del botón "Leer más" */
+.neo-post-content-text .btn-link {
+  font-size: 1rem;
+  margin-left: 8px;
+  font-weight: 600; /* El botón sí lo dejamos un poco más grueso para destacar */
+  text-decoration: underline;
+}
+
+
+
+/* ... tus estilos existentes ... */
+
+/* === MODAL DE CONFIRMACIÓN === */
+.neo-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  animation: neoFadeIn 0.2s ease-out;
+}
+
+.neo-modal-box {
+  width: 90%;
+  max-width: 400px;
+  animation: neoSlideUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  margin: 0 !important;
+}
+
+.neo-modal-header {
+  padding: 1rem;
+  border-bottom: 2px solid #000000;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ffffff;
+  font-family: 'Degular', sans-serif, Arial;
+  border-radius: 0.8rem 0.8rem 0 0; 
+  background-color: #000000;
+}
+
+.neo-modal-header--danger {
+  background-color: #ff4d4d; 
+}
+
+.neo-modal-footer {
+  border-radius: 0 0 0.8rem 0.8rem;
+}
+
+.neo-btn-danger {
+  background-color: #ff4d4d !important;
+  color: white !important;
+}
+.neo-btn-cancel {
+  background-color: #f3f4f6;
+}
+
+@keyframes neoFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes neoSlideUp { from { transform: scale(0.9) translateY(20px); } to { transform: scale(1) translateY(0); } }

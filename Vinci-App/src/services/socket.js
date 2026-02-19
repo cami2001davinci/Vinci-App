@@ -1,6 +1,6 @@
 // src/services/socket.js
 import { io } from "socket.io-client";
-import { CommentCountStore } from "../store/commentCountStore.js";
+// ❌ ELIMINADO: import { CommentCountStore } ... (Esto causaba el conteo doble)
 
 export const socket = io("http://localhost:3000", {
   transports: ["websocket"],
@@ -44,7 +44,8 @@ socket.on("error", (err) => {
   console.log("[WS] error:", err);
 });
 
-// 💥 EVENTOS GLOBALES PARA TODA LA APP
+// 💥 EVENTOS GLOBALES (Solo despachan, no calculan nada)
+
 socket.on("notification", (notif) => {
   window.dispatchEvent(
     new CustomEvent("vinci:notification", { detail: notif })
@@ -88,15 +89,7 @@ socket.on("post:deleted", (payload) => {
 });
 
 socket.on("post:comment", (payload) => {
-  // payload viene del backend: { postId, newComment }
-  const { postId, newComment } = payload || {};
-
-  // Si es comentario raíz (no es reply) → incrementamos el contador global
-  if (postId && newComment && !newComment.parentComment) {
-    CommentCountStore.increment(postId);
-  }
-
-  // Seguimos disparando el evento global para la app (carteles, etc.)
+  // Solo avisamos a la app, PostCard decidirá si suma o no.
   window.dispatchEvent(
     new CustomEvent("vinci:post-comment", { detail: payload })
   );
@@ -115,12 +108,7 @@ socket.on("comment:update", (payload) => {
 });
 
 socket.on("comment:delete", (payload) => {
-  const { postId, isRoot } = payload || {};
-
-  if (postId && isRoot) {
-    CommentCountStore.decrement(postId);
-  }
-
+  // Solo avisamos a la app.
   window.dispatchEvent(
     new CustomEvent("vinci:comment-delete", { detail: payload })
   );

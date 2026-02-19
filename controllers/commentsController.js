@@ -5,26 +5,47 @@ import mongoose from "mongoose";
 import { getNotificationCounts } from "../src/utils/notificationCounts.js";
 
 /* =========================================================================
-   FLAG COMMENT
+   FLAG COMMENT (REPORTAR)
    ========================================================================= */
 export const flagComment = async (req, res) => {
   try {
     const { commentId } = req.params;
+    
+    // 1. Marcar como flaggeado en DB
     const comment = await Comment.findByIdAndUpdate(
       commentId,
       { flagged: true },
       { new: true }
     );
+
     if (!comment)
       return res.status(404).json({ message: "Comentario no encontrado" });
-    res.json({ message: "Comentario marcado como inapropiado", comment });
+
+    // 2. EMITIR SOCKET PARA OCULTARLO EN TIEMPO REAL
+    try {
+        const { emitToPost, emitToAll } = await import("../src/utils/realtime.js");
+        const payload = {
+            postId: comment.post.toString(),
+            commentId: comment._id.toString(),
+            parentComment: comment.parentComment ? comment.parentComment.toString() : null,
+            isRoot: !comment.parentComment,
+            action: 'flagged' // Flag útil para debug
+        };
+        // Usamos 'comment:delete' para que el frontend lo quite de la lista inmediatamente
+        emitToPost(comment.post, "comment:delete", payload);
+        emitToAll("comment:delete", payload);
+    } catch (err) {
+        console.error("Error socket flag:", err);
+    }
+
+    res.json({ message: "Comentario reportado.", comment });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
 /* =========================================================================
-   CREATE COMMENT + REALTIME
+   CREATE COMMENT
    ========================================================================= */
 export const createComment = async (req, res) => {
   try {
@@ -34,25 +55,18 @@ export const createComment = async (req, res) => {
 
     if (!postId) return res.status(400).json({ message: "Falta postId." });
     if (!mongoose.Types.ObjectId.isValid(postId)) {
-      return res
-        .status(400)
-        .json({ message: "postId no es un ObjectId válido." });
+      return res.status(400).json({ message: "postId no es un ObjectId válido." });
     }
-    if (!content || content.length < 3) {
-      return res.status(400).json({
-        message: "El comentario debe tener al menos 3 caracteres.",
-      });
+    if (!content || content.length < 1) { // Ajustado a 1 char mínimo, puedes poner 3 si prefieres
+      return res.status(400).json({ message: "El comentario no puede estar vacío." });
     }
 
     const post = await Post.findById(postId);
-    if (!post)
-      return res
-        .status(404)
-        .json({ message: "Post no encontrado con ese ID." });
+    if (!post) return res.status(404).json({ message: "Post no encontrado." });
 
     const currentUserId = req.user.id || req.user._id;
 
-    // Crear comentario
+    // 1. Crear comentario
     const newComment = new Comment({
       content,
       author: currentUserId,
@@ -62,39 +76,28 @@ export const createComment = async (req, res) => {
 
     const savedComment = await newComment.save();
 
-    // Actualizar replies si tiene padre
+    // 2. Actualizar referencias (Padre, Post, Usuario)
     if (parentComment) {
       await Comment.findByIdAndUpdate(parentComment, {
         $push: { replies: savedComment._id },
       });
     }
-
-    // Agregar al post
     await Post.findByIdAndUpdate(post._id, {
       $push: { comments: savedComment._id },
     });
-
-    // Agregar al usuario
     await User.findByIdAndUpdate(currentUserId, {
       $push: { comments: savedComment._id },
     });
 
-    /* ==============================
-       NOTIFICACIONES
-       ============================== */
-    const actor = await User.findById(currentUserId).select(
-      "username profilePicture"
-    );
+    // 3. Notificaciones
+    const actor = await User.findById(currentUserId).select("username profilePicture");
 
     if (parentComment) {
-      // Notificación por respuesta
+      // Notificación al dueño del comentario padre
       const parent = await Comment.findById(parentComment);
       if (parent) {
         const parentAuthor = await User.findById(parent.author);
-        if (
-          parentAuthor &&
-          parentAuthor._id.toString() !== currentUserId.toString()
-        ) {
+        if (parentAuthor && parentAuthor._id.toString() !== currentUserId.toString()) {
           const notif = {
             type: "COMMENT_POST",
             message: `${actor?.username || "Alguien"} respondió a tu comentario.`,
@@ -112,7 +115,6 @@ export const createComment = async (req, res) => {
           await parentAuthor.save();
 
           const counts = getNotificationCounts(parentAuthor);
-
           const { emitToUser } = await import("../src/utils/realtime.js");
           emitToUser(parentAuthor._id, "notification", notif);
           emitToUser(parentAuthor._id, "notification:new", notif);
@@ -120,12 +122,9 @@ export const createComment = async (req, res) => {
         }
       }
     } else {
-      // Notificación al autor del post
+      // Notificación al dueño del post
       const postAuthor = await User.findById(post.author);
-      if (
-        postAuthor &&
-        postAuthor._id.toString() !== currentUserId.toString()
-      ) {
+      if (postAuthor && postAuthor._id.toString() !== currentUserId.toString()) {
         const notif = {
           type: "COMMENT_POST",
           message: `${actor?.username || "Alguien"} comentó tu post.`,
@@ -143,7 +142,6 @@ export const createComment = async (req, res) => {
         await postAuthor.save();
 
         const counts = getNotificationCounts(postAuthor);
-
         const { emitToUser } = await import("../src/utils/realtime.js");
         emitToUser(postAuthor._id, "notification", notif);
         emitToUser(postAuthor._id, "notification:new", notif);
@@ -151,9 +149,7 @@ export const createComment = async (req, res) => {
       }
     }
 
-    /* =========================================================================
-       TIEMPO REAL DEL COMENTARIO NUEVO
-       ========================================================================= */
+    // 4. Tiempo Real (Socket)
     const populatedComment = await Comment.findById(savedComment._id).populate({
       path: "author",
       select: "username firstName lastName profilePicture degrees",
@@ -162,21 +158,13 @@ export const createComment = async (req, res) => {
 
     try {
       const realtime = await import("../src/utils/realtime.js");
-
       const payload = {
         postId: post._id.toString(),
         newComment: populatedComment,
       };
 
-      // A la room del post
-      if (typeof realtime.emitToPost === "function") {
-        realtime.emitToPost(post._id, "post:comment", payload);
-      }
-
-      // Broadcast global (Home, DegreePage, otras pestañas)
-      if (typeof realtime.emitToAll === "function") {
-        realtime.emitToAll("post:comment", payload);
-      }
+      if (realtime.emitToPost) realtime.emitToPost(post._id, "post:comment", payload);
+      if (realtime.emitToAll) realtime.emitToAll("post:comment", payload);
     } catch (err) {
       console.error("Error emitiendo post:comment:", err);
     }
@@ -194,11 +182,9 @@ export const createComment = async (req, res) => {
 export const getCommentsByUser = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
-
     const comments = await Comment.find({ author: userId })
       .populate("post", "title")
       .sort({ createdAt: -1 });
-
     res.json(comments);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -206,19 +192,18 @@ export const getCommentsByUser = async (req, res) => {
 };
 
 /* =========================================================================
-   GET COMMENTS OF A POST (ROOT ONLY)
+   GET COMMENTS OF A POST
    ========================================================================= */
 export const getCommentsByPost = async (req, res) => {
   const { postId } = req.params;
-
   try {
     const post = await Post.findById(postId);
-    if (!post)
-      return res.status(404).json({ message: "Post no encontrado" });
+    if (!post) return res.status(404).json({ message: "Post no encontrado" });
 
+    // Filtramos los flaggeados si no es admin
     const query = { post: post._id, parentComment: null };
     if (!req.user?.role || req.user.role !== "admin") {
-      query.flagged = false;
+      query.flagged = false; // Asumiendo 'false' o que el campo no exista
     }
 
     const comments = await Comment.find(query)
@@ -227,7 +212,7 @@ export const getCommentsByPost = async (req, res) => {
         select: "username firstName lastName profilePicture degrees",
         populate: { path: "degrees", select: "name slug" },
       })
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: -1 });
 
     res.json(comments);
   } catch (error) {
@@ -241,18 +226,41 @@ export const getCommentsByPost = async (req, res) => {
 export const getRepliesToComment = async (req, res) => {
   try {
     const commentId = req.params.commentId || req.params.id;
-
     const replies = await Comment.find({ parentComment: commentId })
       .populate({
         path: "author",
         select: "username firstName lastName profilePicture degrees",
         populate: { path: "degrees", select: "name slug" },
       })
-      .sort({ createdAt: 1 });
-
+      .sort({ createdAt: -1 });
     res.json(replies);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+/* =========================================================================
+   GET COMMENT PATH
+   ========================================================================= */
+export const getCommentPath = async (req, res) => {
+  try {
+    const commentId = req.params.pathId || req.params.commentId || req.params.id;
+    if (!commentId || !mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.json([]);
+    }
+    const start = await Comment.findById(commentId);
+    if (!start) return res.json([]);
+
+    const path = [start._id.toString()];
+    let current = start;
+    while (current.parentComment) {
+      current = await Comment.findById(current.parentComment);
+      if (!current) break;
+      path.unshift(current._id.toString());
+    }
+    res.json(path);
+  } catch (err) {
+    res.status(500).json({ message: "Error al obtener el camino" });
   }
 };
 
@@ -265,55 +273,33 @@ export const updateComment = async (req, res) => {
     const userId = req.user.id || req.user._id;
 
     const comment = await Comment.findById(commentId);
-    if (!comment)
-      return res.status(404).json({ error: "Comentario no encontrado" });
+    if (!comment) return res.status(404).json({ error: "No encontrado" });
 
-    const authorId =
-      typeof comment.author === "object" && comment.author._id
-        ? comment.author._id.toString()
-        : comment.author.toString();
-
-    if (authorId !== userId.toString()) {
-      return res
-        .status(403)
-        .json({ error: "No tienes permiso para editar este comentario" });
-    }
-
-    const updates = {};
-    if (req.body.content !== undefined) {
-      updates.content = req.body.content;
+    if (comment.author.toString() !== userId.toString()) {
+      return res.status(403).json({ error: "Sin permiso" });
     }
 
     const updatedComment = await Comment.findByIdAndUpdate(
       commentId,
-      updates,
+      { content: req.body.content },
       { new: true, runValidators: true }
-    ).populate("author", "username");
-
-    if (!updatedComment) {
-      return res.status(404).json({ error: "Comentario no encontrado" });
-    }
+    ).populate({
+        path: "author",
+        select: "username firstName lastName profilePicture degrees"
+    });
 
     try {
-      const { emitToPost, emitToAll } = await import(
-        "../src/utils/realtime.js"
-      );
-
+      const { emitToPost, emitToAll } = await import("../src/utils/realtime.js");
       const payload = {
         commentId: updatedComment._id.toString(),
-        postId: updatedComment.post?.toString(),
-        parentComment: updatedComment.parentComment
-          ? updatedComment.parentComment.toString()
-          : null,
+        postId: updatedComment.post.toString(),
+        parentComment: updatedComment.parentComment ? updatedComment.parentComment.toString() : null,
         content: updatedComment.content,
-        comment: updatedComment,
+        updatedAt: updatedComment.updatedAt
       };
-
       emitToPost(updatedComment.post, "comment:update", payload);
       emitToAll("comment:update", payload);
-    } catch (err) {
-      console.error("Error emitiendo comment:update:", err.message);
-    }
+    } catch (err) { console.error(err); }
 
     res.json(updatedComment);
   } catch (error) {
@@ -322,7 +308,7 @@ export const updateComment = async (req, res) => {
 };
 
 /* =========================================================================
-   DELETE COMMENT + REALTIME + FIX CONTADOR
+   DELETE COMMENT
    ========================================================================= */
 export const deleteComment = async (req, res) => {
   try {
@@ -330,70 +316,41 @@ export const deleteComment = async (req, res) => {
     const userId = (req.user.id || req.user._id).toString();
 
     const comment = await Comment.findById(commentId);
-    if (!comment)
-      return res.status(404).json({ message: "Comentario no encontrado" });
+    if (!comment) return res.status(404).json({ message: "No encontrado" });
 
-    const authorId =
-      typeof comment.author === "object" && comment.author._id
-        ? comment.author._id.toString()
-        : comment.author.toString();
-
-    if (authorId !== userId) {
-      return res.status(403).json({
-        message: "No tienes permiso para eliminar este comentario",
-      });
+    if (comment.author.toString() !== userId) {
+      return res.status(403).json({ message: "Sin permiso" });
     }
 
     const postId = comment.post;
-    const wasRoot = !comment.parentComment;
+    const parentComment = comment.parentComment;
 
-    // Sacar de replies
-    if (comment.parentComment) {
-      await Comment.findByIdAndUpdate(comment.parentComment, {
-        $pull: { replies: comment._id },
-      });
+    if (parentComment) {
+      await Comment.findByIdAndUpdate(parentComment, { $pull: { replies: comment._id } });
     }
-
-    // Sacar del Post (fix contador)
-    await Post.findByIdAndUpdate(postId, {
-      $pull: { comments: comment._id },
-    });
-
-    // Sacar del usuario
-    await User.findByIdAndUpdate(userId, {
-      $pull: { comments: comment._id },
-    });
-
-    // Borrar comentario
+    await Post.findByIdAndUpdate(postId, { $pull: { comments: comment._id } });
+    await User.findByIdAndUpdate(userId, { $pull: { comments: comment._id } });
     await Comment.findByIdAndDelete(commentId);
 
-    // Tiempo real
     try {
       const { emitToPost, emitToAll } = await import("../src/utils/realtime.js");
-
       const payload = {
         postId: postId.toString(),
         commentId: comment._id.toString(),
-        parentComment: comment.parentComment
-          ? comment.parentComment.toString()
-          : null,
-        isRoot: wasRoot,
+        parentComment: parentComment ? parentComment.toString() : null,
       };
-
       emitToPost(postId, "comment:delete", payload);
       emitToAll("comment:delete", payload);
-    } catch (err) {
-      console.error("Error emitiendo comment:delete:", err.message);
-    }
+    } catch (err) { console.error(err); }
 
-    res.json({ message: "Comentario eliminado correctamente" });
+    res.json({ message: "Eliminado" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
 /* =========================================================================
-   TOGGLE LIKE ON COMMENT + REALTIME
+   TOGGLE LIKE
    ========================================================================= */
 export const toggleLikeOnComment = async (req, res) => {
   const commentId = req.params.commentId || req.params.id;
@@ -401,60 +358,44 @@ export const toggleLikeOnComment = async (req, res) => {
 
   try {
     const comment = await Comment.findById(commentId);
-    if (!comment)
-      return res.status(404).json({ message: "Comentario no encontrado" });
+    if (!comment) return res.status(404).json({ message: "Comentario no encontrado" });
 
     if (!Array.isArray(comment.likedBy)) comment.likedBy = [];
 
-    const hasLiked = comment.likedBy.some(
-      (id) => id.toString() === userId.toString()
-    );
+    const hasLiked = comment.likedBy.some(id => id.toString() === userId.toString());
 
     if (hasLiked) {
-      // Quitar like
-      comment.likedBy = comment.likedBy.filter(
-        (id) => id.toString() !== userId.toString()
-      );
+      comment.likedBy = comment.likedBy.filter(id => id.toString() !== userId.toString());
     } else {
-      // Agregar like
       comment.likedBy.push(userId);
-
+      // Notificación de like...
       const isSelfLike = comment.author.toString() === userId.toString();
-
       if (!isSelfLike) {
-        const [commentAuthor, actor] = await Promise.all([
-          User.findById(comment.author),
-          User.findById(userId).select("username profilePicture"),
-        ]);
-
-        if (commentAuthor) {
-          const notif = {
-            type: "LIKE_COMMENT",
-            message: `${actor?.username || "Alguien"} le dio like a tu comentario.`,
-            post: comment.post,
-            fromUser: userId,
-            fromUserName: actor?.username || "",
-            fromUserAvatar: actor?.profilePicture || "",
-            entity: {
-              kind: "comment",
-              id: comment._id,
-            },
-            data: { commentId: comment._id },
-            read: false,
-            createdAt: new Date(),
-          };
-
-          commentAuthor.notifications.push(notif);
-          await commentAuthor.save();
-
-          const counts = getNotificationCounts(commentAuthor);
-
-          const { emitToUser } = await import("../src/utils/realtime.js");
-
-          emitToUser(commentAuthor._id, "notification", notif);
-          emitToUser(commentAuthor._id, "notification:new", notif);
-          emitToUser(commentAuthor._id, "notifications:count", counts);
-        }
+         const [commentAuthor, actor] = await Promise.all([
+           User.findById(comment.author),
+           User.findById(userId).select("username profilePicture"),
+         ]);
+         if (commentAuthor) {
+            const notif = {
+               type: "LIKE_COMMENT",
+               message: `${actor?.username || "Alguien"} le dio like a tu comentario.`,
+               post: comment.post,
+               fromUser: userId,
+               fromUserName: actor?.username || "",
+               fromUserAvatar: actor?.profilePicture || "",
+               entity: { kind: "comment", id: comment._id },
+               data: { commentId: comment._id },
+               read: false,
+               createdAt: new Date(),
+            };
+            commentAuthor.notifications.push(notif);
+            await commentAuthor.save();
+            const counts = getNotificationCounts(commentAuthor);
+            const { emitToUser } = await import("../src/utils/realtime.js");
+            emitToUser(commentAuthor._id, "notification", notif);
+            emitToUser(commentAuthor._id, "notification:new", notif);
+            emitToUser(commentAuthor._id, "notifications:count", counts);
+         }
       }
     }
 
@@ -468,50 +409,16 @@ export const toggleLikeOnComment = async (req, res) => {
     };
 
     try {
-      const { emitToPost, emitToAll } = await import(
-        "../src/utils/realtime.js"
-      );
+      const { emitToPost, emitToAll } = await import("../src/utils/realtime.js");
       emitToPost(comment.post, "comment:like", likePayload);
       emitToAll("comment:like", likePayload);
-    } catch (err) {
-      console.error("Error emitiendo comment:like:", err.message);
-    }
+    } catch (err) { console.error("Error like socket:", err.message); }
 
     return res.json({
       liked: !hasLiked,
       likesCount: comment.likedBy.length,
     });
   } catch (error) {
-    console.error("Error en toggleLikeOnComment:", error);
     return res.status(500).json({ message: error.message });
-  }
-};
-
-/* =========================================================================
-   GET COMMENT PATH (para despliegue desde notificaciones)
-   ========================================================================= */
-export const getCommentPath = async (req, res) => {
-  try {
-    const commentId = req.params.pathId || req.params.commentId || req.params.id;
-
-    // FIX: evitamos 404 y CastError, devolviendo [] si el id no es válido
-    if (!commentId || !mongoose.Types.ObjectId.isValid(commentId)) {
-      return res.json([]);
-    }
-    const start = await Comment.findById(commentId);
-    if (!start) return res.json([]);
-
-    const path = [start._id.toString()];
-    let current = start;
-
-    while (current.parentComment) {
-      current = await Comment.findById(current.parentComment);
-      if (!current) break;
-      path.unshift(current._id.toString());
-    }
-
-    res.json(path);
-  } catch (err) {
-    res.status(500).json({ message: "Error al obtener el camino" });
   }
 };

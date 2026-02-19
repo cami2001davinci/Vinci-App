@@ -1,0 +1,195 @@
+/* src/styles/PostForm.css */
+
+/* Contenedor Principal Neobrutalista */
+.post-form-card {
+  background-color: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 4px 4px 0px #000000;
+}
+
+/* Header del Usuario */
+.pf-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.pf-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2px solid #000000;
+  object-fit: cover;
+  margin-right: 1rem;
+}
+
+.pf-username {
+  margin: 0;
+  font-family: 'Degular', sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.pf-prompt {
+  color: #6b7280;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Textarea limpia */
+.pf-textarea {
+  width: 100%;
+  border: none;
+  background-color: #f3f4f6; /* Gris muy suave */
+  border-radius: 12px;
+  padding: 1rem;
+  resize: none;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  transition: background-color 0.2s;
+}
+
+.pf-textarea:focus {
+  outline: none;
+  background-color: #e5e7eb;
+  box-shadow: inset 2px 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Previsualización de Imágenes */
+.pf-previews {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.pf-preview-item {
+  position: relative;
+  display: inline-block;
+}
+
+.pf-preview-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  border: 2px solid #000000;
+  object-fit: cover;
+}
+
+.pf-remove-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  background-color: #ef4444; /* Rojo */
+  color: white;
+  border: 2px solid #000000;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Lista de Documentos */
+.pf-doc-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 1rem;
+}
+
+.pf-doc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #f3f4f6;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px dashed #000000;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pf-doc-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Barra de Acciones (Inferior) */
+.pf-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 2px solid #f3f4f6;
+  padding-top: 1rem;
+}
+
+.pf-icons {
+  display: flex;
+  gap: 1rem;
+  font-size: 1.25rem;
+  color: #6b7280;
+}
+
+.pf-icon-btn {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.pf-icon-btn:hover {
+  color: #000000;
+}
+
+.pf-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.pf-select {
+  border: 2px solid #000000;
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.pf-submit-btn {
+  background-color: #000000;
+  color: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 8px;
+  padding: 0.4rem 1.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+  transition: transform 0.1s;
+}
+
+.pf-submit-btn:disabled {
+  background-color: #9ca3af;
+  border-color: #9ca3af;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.pf-submit-btn:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}

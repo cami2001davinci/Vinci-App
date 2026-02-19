@@ -1,34 +1,43 @@
-﻿// src/pages/Home.jsx
-import { useEffect, useState, useRef } from "react";
+﻿import { useEffect, useState, useRef } from "react";
 import axios from "../api/axiosInstance";
-import ThreeColumnLayout from "../components/ThreeColumnLayout";
-import Sidebar from "../components/SideBar";
+import { useAuth } from "../context/AuthContext"; // Para saber quién soy
+import { socket } from "../services/socket"; // Importamos el socket
+import MainLayout from "../components/MainLayout";
 import PostCard from "../components/PostCard";
-import RightColumn from "../components/RightColumn";
 
-const HomePage = () => {
+export default function HomePage() {
+  const { user } = useAuth();
   const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Almacén temporal para posts nuevos que llegan por socket (de otros usuarios)
   const [pendingPosts, setPendingPosts] = useState([]);
-  const [showNewBanner, setShowNewBanner] = useState(false);
-  const idsRef = useRef(new Set());
+
+  // Referencia para scroll (opcional, si quieres volver arriba al cargar nuevos)
+  const topRef = useRef(null);
 
   const loadPosts = async () => {
+    setLoading(true);
     try {
+      // Recuerda: el backend ya debe filtrar { flagged: { $ne: true } }
       const res = await axios.get("/posts");
-      const items = Array.isArray(res.data) ? res.data : res.data?.items || [];
-
-      setPosts(items);
-
-      const newSet = new Set();
-      for (const p of items) {
-        if (p && p._id) newSet.add(p._id);
+      
+      let safePosts = [];
+      if (Array.isArray(res.data)) {
+        safePosts = res.data;
+      } else if (res.data && Array.isArray(res.data.items)) {
+        safePosts = res.data.items;
       }
-      idsRef.current = newSet;
 
-      setPendingPosts([]);
-      setShowNewBanner(false);
+      setPosts(safePosts);
+      setError(null);
     } catch (err) {
       console.error("Error al cargar posts:", err);
+      setError("No se pudieron cargar las publicaciones.");
+      setPosts([]); 
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -36,193 +45,131 @@ const HomePage = () => {
     loadPosts();
   }, []);
 
-  const handleIncomingPost = (post) => {
-    if (!post || !post._id) return;
-    if (idsRef.current.has(post._id)) return;
-
-    idsRef.current.add(post._id);
-    setPendingPosts((prev) => [post, ...prev]);
-    setShowNewBanner(true);
-  };
-
+  // --- LÓGICA DE SOCKETS (Tiempo Real) ---
   useEffect(() => {
-    const handler = (e) => {
-      const { post } = e.detail || {};
-      if (!post) return;
-      handleIncomingPost(post);
-    };
+    // 1. Escuchar NUEVOS posts
+    const handlePostCreated = (payload) => {
+      const newPost = payload.post || payload;
+      if (!newPost?._id) return;
 
-    window.addEventListener("vinci:post-created", handler);
-    return () => window.removeEventListener("vinci:post-created", handler);
-  }, []);
-
-  useEffect(() => {
-    let bc;
-    try {
-      bc = new BroadcastChannel("vinci-posts");
-      bc.onmessage = (e) => {
-        const msg = e?.data;
-        if (msg?.type === "created" && msg?.payload) {
-          handleIncomingPost(msg.payload);
-        }
-      };
-    } catch (_) {}
-
-    const onStorage = (ev) => {
-      if (ev.key !== "vinci:newPost" || !ev.newValue) return;
-      try {
-        const data = JSON.parse(ev.newValue);
-        if (data?.post) {
-          handleIncomingPost(data.post);
-        }
-      } catch (_) {}
-    };
-
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      try {
-        bc && bc.close();
-      } catch (_) {}
-    };
-  }, []);
-
-  const handlePostChanged = () => {
-    loadPosts();
-  };
-
-  const updatePostInLists = (nextPost) => {
-    if (!nextPost?._id) return;
-
-    setPosts((prev) => {
-      let changed = false;
-      const mapped = prev.map((p) => {
-        if (p._id === nextPost._id) {
-          changed = true;
-          return { ...p, ...nextPost };
-        }
-        return p;
-      });
-      return changed ? mapped : prev;
-    });
-
-    setPendingPosts((prev) => {
-      let changed = false;
-      const mapped = prev.map((p) => {
-        if (p._id === nextPost._id) {
-          changed = true;
-          return { ...p, ...nextPost };
-        }
-        return p;
-      });
-      return changed ? mapped : prev;
-    });
-  };
-
-  const removePostEverywhere = (postId) => {
-    if (!postId) return;
-    setPosts((prev) => prev.filter((p) => p._id !== postId));
-    setPendingPosts((prev) => {
-      const filtered = prev.filter((p) => p._id !== postId);
-      if (!filtered.length) {
-        setShowNewBanner(false);
+      // Si el post es MÍO, lo agrego inmediatamente
+      if (user && newPost.author?._id === user._id) {
+        setPosts((prev) => [newPost, ...prev]);
+        // Limpiamos de pending si existiera por error
+        setPendingPosts((prev) => prev.filter(p => p._id !== newPost._id));
+      } else {
+        // Si es de OTRO, lo guardo en "pendientes" y muestro el botón
+        setPendingPosts((prev) => {
+          if (prev.find(p => p._id === newPost._id)) return prev;
+          return [newPost, ...prev];
+        });
       }
-      return filtered;
-    });
-    idsRef.current.delete(postId);
-  };
-
-  useEffect(() => {
-    const handlePostUpdated = (e) => {
-      const detail = e.detail || {};
-      const nextPost = detail.post || detail;
-      if (!nextPost?._id) return;
-      updatePostInLists(nextPost);
     };
 
-    const handlePostDeleted = (e) => {
-      const { postId } = e.detail || {};
+    // 2. Escuchar ACTUALIZACIONES (Edición, Likes masivos, etc.)
+    const handlePostUpdated = (payload) => {
+      const updatedPost = payload.post || payload;
+      const pId = updatedPost._id;
+      
+      setPosts((prev) => prev.map((p) => (p._id === pId ? updatedPost : p)));
+    };
+
+    // 3. Escuchar ELIMINACIONES (Borrado o Reporte)
+    const handlePostDeleted = (payload) => {
+      const { postId } = payload;
       if (!postId) return;
-      removePostEverywhere(postId);
+      
+      // Lo sacamos de la lista visible
+      setPosts((prev) => prev.filter((p) => p._id !== postId));
+      // Y también de pendientes por si estaba ahí
+      setPendingPosts((prev) => prev.filter((p) => p._id !== postId));
     };
 
-    window.addEventListener("vinci:post-updated", handlePostUpdated);
-    window.addEventListener("vinci:post-deleted", handlePostDeleted);
+    socket.on("post:created", handlePostCreated);
+    socket.on("post:updated", handlePostUpdated);
+    socket.on("post:deleted", handlePostDeleted);
+
     return () => {
-      window.removeEventListener("vinci:post-updated", handlePostUpdated);
-      window.removeEventListener("vinci:post-deleted", handlePostDeleted);
+      socket.off("post:created", handlePostCreated);
+      socket.off("post:updated", handlePostUpdated);
+      socket.off("post:deleted", handlePostDeleted);
     };
-  }, []);
+  }, [user]);
 
-  const applyPendingPosts = () => {
-    if (!pendingPosts.length) return;
-
-    setPosts((prev) => {
-      const merged = [...pendingPosts, ...prev];
-      const seen = new Set();
-      const unique = [];
-
-      for (const p of merged) {
-        if (!p || !p._id) continue;
-        if (seen.has(p._id)) continue;
-        seen.add(p._id);
-        unique.push(p);
-      }
-
-      unique.sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tb - ta;
-      });
-
-      return unique;
-    });
-
+  // Función para mezclar los posts pendientes con los actuales
+  const handleShowNewPosts = () => {
+    setPosts((prev) => [...pendingPosts, ...prev]);
     setPendingPosts([]);
-    setShowNewBanner(false);
+    // Scroll suave hacia arriba
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+  // Manejador local para cuando PostCard avisa de cambios (delete manual)
+  const handlePostChanged = (action, postId) => {
+    if (action === "delete") {
+      setPosts((prev) => prev.filter((p) => p._id !== postId));
+    } else {
+      loadPosts(); 
+    }
   };
 
   return (
-    <>
-      {showNewBanner && pendingPosts.length > 0 && (
-        <button
-          type="button"
-          className="btn btn-primary new-posts-banner shadow"
-          onClick={applyPendingPosts}
+    <MainLayout>
+      <div ref={topRef}></div>
+
+      {/* BOTÓN FLOTANTE DE NUEVOS POSTS */}
+      {pendingPosts.length > 0 && (
+        <div 
+          className="position-fixed start-50 translate-middle-x z-3" 
+          style={{ top: '80px' }} // Ajusta según la altura de tu Navbar
         >
-          <i className="bi bi-arrow-up-circle-fill me-2" />
-          {pendingPosts.length === 1
-            ? "1 nuevo post. Ver arriba"
-            : `${pendingPosts.length} posts nuevos. Ver arriba`}
-        </button>
+          <button 
+            onClick={handleShowNewPosts}
+            className="btn btn-dark rounded-pill shadow-lg fw-bold d-flex align-items-center gap-2 px-4 py-2 animate__animated animate__fadeInDown"
+            style={{ border: '2px solid white' }}
+          >
+            <i className="bi bi-arrow-up-circle-fill text-warning"></i>
+            Ver {pendingPosts.length} nuevas publicaciones
+          </button>
+        </div>
       )}
 
-      <ThreeColumnLayout
-        left={<Sidebar />}
-        center={
-          <div className="d-flex flex-column gap-3">
-            {posts.map((post) => (
-              <PostCard
-                key={post._id}
-                post={post}
-                onPostChanged={handlePostChanged}
-                origin="home"
-                canLike={true}
-                canComment={false}
-              />
-            ))}
+      {/* FEED DE PUBLICACIONES */}
+      <div className="d-flex flex-column gap-4 mt-4">
+        {loading ? (
+          <div className="text-center py-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Cargando...</span>
+            </div>
+            <p className="mt-3 fw-bold text-muted">Cargando el universo Vinci...</p>
           </div>
-        }
-        right={<RightColumn />}
-      />
-    </>
-  );
-};
+        ) : (
+          <>
+            {error && (
+                <div className="alert alert-danger border-2 border-dark text-center fw-bold">
+                {error}
+                </div>
+            )}
 
-export default HomePage;
+            {Array.isArray(posts) && posts.length > 0 ? (
+              posts.map((post) => (
+                <PostCard
+                  key={post._id}
+                  post={post}
+                  onPostChanged={handlePostChanged}
+                />
+              ))
+            ) : (
+              !error && (
+                <div className="neo-card p-5 text-center">
+                  <h3 className="fw-black">¡Todo muy tranquilo! 🍃</h3>
+                  <p className="text-muted">No hay publicaciones recientes.</p>
+                </div>
+              )
+            )}
+          </>
+        )}
+      </div>
+    </MainLayout>
+  );
+}

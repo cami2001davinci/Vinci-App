@@ -1,16 +1,18 @@
-// export default PostForm;
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axios from "../api/axiosInstance";
+import "../styles/PostForm.css";
 
 const PostForm = ({ onNewPost }) => {
   const { user, refreshUserProfile } = useAuth();
-  const { slug } = useParams(); // carrera tomada desde /degrees/:slug
+  const { slug } = useParams(); // Puede ser undefined si estamos en Home
 
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("comunidad");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
   const [imageFiles, setImageFiles] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [docFiles, setDocFiles] = useState([]);
@@ -24,7 +26,7 @@ const PostForm = ({ onNewPost }) => {
   }, []);
 
   const maxFiles = 5;
-  const maxFileSize = 2 * 1024 * 1024; // 2MB
+  const maxFileSize = 2 * 1024 * 1024;
 
   const handleImageChange = (e) => {
     const selected = Array.from(e.target.files);
@@ -81,52 +83,56 @@ const PostForm = ({ onNewPost }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!slug) {
-      setError("No hay carrera activa en esta página");
-      return;
-    }
     if (!content.trim()) {
       setError("Escribe algo antes de publicar");
       return;
     }
 
+    // --- LÓGICA DE SELECCIÓN DE CARRERA CORREGIDA ---
+    let degreeDataToSend = null;
+    let degreeKey = null;
+
+    if (slug) {
+        // Estamos en la página de una carrera específica
+        degreeDataToSend = slug;
+        degreeKey = "degreeSlug";
+    } else if (user?.degrees && user.degrees.length > 0) {
+        // Estamos en Home: Usamos el ID de la primera carrera del usuario
+        degreeDataToSend = user.degrees[0]._id || user.degrees[0];
+        // 👇 AQUÍ ESTABA EL ERROR: Cambiado de "degree" a "degreeId"
+        degreeKey = "degreeId"; 
+    } else {
+        setError("Necesitas estar inscrito en una carrera para publicar.");
+        return;
+    }
+    // --------------------------------------------------------
+
     const formData = new FormData();
+    // Título automático porque el modelo lo requiere (required: true)
+    formData.append("title", "Publicación"); 
     formData.append("content", content.trim());
     formData.append("category", category);
-    formData.append("degreeSlug", slug); // 👈 clave: mandamos el slug
+    
+    // Enviamos la clave correcta (degreeSlug o degreeId)
+    if (degreeDataToSend && degreeKey) {
+        formData.append(degreeKey, degreeDataToSend);
+    }
+    
     imageFiles.forEach((file) => formData.append("files", file));
     docFiles.forEach((file) => formData.append("files", file));
+
+    setSaving(true);
 
     try {
       const res = await axios.post("/posts", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      // notificar a quien nos pasó el callback
       onNewPost?.(res.data);
-
-      // 👇 NOTIFICAR A TODA LA APP (Home incluido) — AHORA SÍ, DENTRO DEL try
-      // 1) Evento local (misma pestaña)
       window.dispatchEvent(
         new CustomEvent("vinci:post:created", { detail: res.data })
       );
 
-      // 2) Broadcast a otras pestañas/ventanas
-      try {
-        const bc = new BroadcastChannel("vinci-posts");
-        bc.postMessage({ type: "created", payload: res.data });
-        bc.close();
-      } catch (_) {}
-
-      // 3) Fallback por storage (por si el navegador no soporta BroadcastChannel)
-      try {
-        localStorage.setItem(
-          "vinci:newPost",
-          JSON.stringify({ ts: Date.now(), post: res.data })
-        );
-      } catch (_) {}
-
-      // reset
       setContent("");
       setCategory("comunidad");
       setImageFiles([]);
@@ -134,170 +140,88 @@ const PostForm = ({ onNewPost }) => {
       setDocFiles([]);
       setError("");
     } catch (err) {
+      console.error(err);
       setError(err.response?.data?.message || "Error al publicar");
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div className="card mb-4 p-3 position-relative">
-      <div className="d-flex align-items-center mb-2">
+    <div className="post-form-card">
+      <div className="pf-header">
         <img
           src={
             user?.profilePicture
               ? `${baseUrl}${user.profilePicture}`
-              : "/default-avatar.png"
+              : "https://via.placeholder.com/50"
           }
           alt="Usuario"
-          className="rounded-circle me-2"
-          width="40"
-          height="40"
-          style={{ objectFit: "cover" }}
+          className="pf-avatar"
         />
-        <span className="text-muted">¿Qué está pasando?</span>
+        <div>
+            <h6 className="pf-username">HOLA, {user?.firstName || 'Usuario'}</h6>
+            <span className="pf-prompt">
+                {slug ? "Publicando en esta carrera" : `Publicando en ${user?.degrees?.[0]?.name || "tu muro"}`}
+            </span>
+        </div>
       </div>
 
-      {error && <p className="text-danger">{error}</p>}
+      {error && <div className="alert alert-danger border-2 border-dark mb-3">{error}</div>}
 
       <form onSubmit={handleSubmit}>
         <textarea
-          className="form-control mb-2"
+          className="pf-textarea"
           rows="3"
-          placeholder="Escribe tu post..."
+          placeholder="Comparte tu idea, proyecto o duda..."
           value={content}
           onChange={(e) => setContent(e.target.value)}
         ></textarea>
 
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          ref={imageInputRef}
-          style={{ display: "none" }}
-          onChange={handleImageChange}
-        />
-
-        <input
-          type="file"
-          accept=".pdf,.doc,.docx"
-          multiple
-          ref={docInputRef}
-          style={{ display: "none" }}
-          onChange={handleDocChange}
-        />
+        <input type="file" accept="image/*" multiple ref={imageInputRef} style={{ display: "none" }} onChange={handleImageChange} />
+        <input type="file" accept=".pdf,.doc,.docx" multiple ref={docInputRef} style={{ display: "none" }} onChange={handleDocChange} />
 
         {imagePreviews.length > 0 && (
-          <div className="mb-3 d-flex gap-2 flex-wrap position-relative">
+          <div className="pf-previews">
             {imagePreviews.map((src, idx) => (
-              <div
-                key={idx}
-                style={{ position: "relative", display: "inline-block" }}
-              >
-                <img
-                  src={src}
-                  alt={`preview-${idx}`}
-                  className="rounded"
-                  style={{
-                    width: "80px",
-                    height: "80px",
-                    objectFit: "cover",
-                    border: "1px solid #ccc",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  style={{
-                    position: "absolute",
-                    top: "-8px",
-                    right: "-8px",
-                    background: "red",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "50%",
-                    width: "20px",
-                    height: "20px",
-                    fontSize: "12px",
-                    cursor: "pointer",
-                    lineHeight: "18px",
-                    textAlign: "center",
-                  }}
-                  title="Eliminar imagen"
-                >
-                  ×
-                </button>
+              <div key={idx} className="pf-preview-item">
+                <img src={src} alt="preview" className="pf-preview-img" />
+                <button type="button" onClick={() => removeImage(idx)} className="pf-remove-btn">×</button>
               </div>
             ))}
           </div>
         )}
 
         {docFiles.length > 0 && (
-          <div className="mb-3">
-            <strong>Documentos para subir:</strong>
-            <ul>
-              {docFiles.map((file, idx) => (
-                <li
-                  key={idx}
-                  style={{ display: "flex", alignItems: "center", gap: "10px" }}
-                >
-                  {file.name}
-                  <button
-                    type="button"
-                    onClick={() => removeDoc(idx)}
-                    style={{
-                      background: "red",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      padding: "0 6px",
-                      cursor: "pointer",
-                    }}
-                    title="Eliminar documento"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ul className="pf-doc-list">
+            {docFiles.map((file, idx) => (
+              <li key={idx} className="pf-doc-item">
+                <i className="bi bi-file-earmark"></i> {file.name}
+                <button type="button" onClick={() => removeDoc(idx)} className="pf-doc-remove">×</button>
+              </li>
+            ))}
+          </ul>
         )}
 
-        <div className="d-flex justify-content-end align-items-center gap-2">
-          {/* SOLO categorías (las nuevas claves) */}
-          <select
-            className="form-select w-auto"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="comunidad">Comunidad</option>
-            <option value="colaboradores">Colaboradores</option>
-            <option value="ayuda">Ayuda</option>
-            <option value="feedback">Feedback</option>
-            <option value="ideas">Ideas</option>
-          </select>
+        <div className="pf-actions">
+           <div className="pf-icons">
+              <i className="bi bi-image pf-icon-btn" onClick={() => imageInputRef.current?.click()}></i>
+              <i className="bi bi-paperclip pf-icon-btn" onClick={() => docInputRef.current?.click()}></i>
+           </div>
 
-          <button type="submit" className="btn btn-primary">
-            Postear
-          </button>
-        </div>
+           <div className="pf-controls">
+              <select className="pf-select" value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="comunidad">Comunidad</option>
+                <option value="colaboradores">Colaboradores</option>
+                <option value="ayuda">Ayuda</option>
+                <option value="feedback">Feedback</option>
+                <option value="ideas">Ideas</option>
+              </select>
 
-        <div className="d-flex gap-3 mt-3 text-primary fs-5 align-items-center">
-          <i
-            className="bi bi-image"
-            style={{ cursor: "pointer" }}
-            title="Subir imágenes"
-            onClick={() => imageInputRef.current?.click()}
-          ></i>
-
-          <i
-            className="bi bi-file-earmark-text"
-            style={{ cursor: "pointer" }}
-            title="Subir documentos"
-            onClick={() => docInputRef.current?.click()}
-          ></i>
-
-          <i className="bi bi-emoji-smile"></i>
-          <i className="bi bi-clock"></i>
-          <i className="bi bi-geo-alt"></i>
+              <button type="submit" className="pf-submit-btn" disabled={saving}>
+                {saving ? "..." : "POSTEAR"}
+              </button>
+           </div>
         </div>
       </form>
     </div>

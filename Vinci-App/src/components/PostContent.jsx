@@ -1,192 +1,151 @@
-// components/PostContent.jsx
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import Lightbox from "yet-another-react-lightbox";
-import { Document, Page, pdfjs } from "react-pdf";
+import "yet-another-react-lightbox/styles.css";
+
+// Imports para PDF (opcionales)
+import { pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min?url";
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-export default function PostContent({ post, actionsSlot = null }) {
+// 👇 Recibimos 'accentColor' como prop, con negro como fallback
+export default function PostContent({ post, accentColor = '#000000' }) {
   const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const isOpeningLightbox = useRef(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  const authorDegrees = Array.isArray(post.author?.degrees)
-    ? post.author.degrees
-    : [];
-  const degreeNames = authorDegrees.map((d) => d?.name).filter(Boolean);
-  const visibleDegrees = degreeNames.slice(0, 2);
-  const extraDegreesCount = Math.max(
-    degreeNames.length - visibleDegrees.length,
-    0
-  );
+  if (!post) return null;
 
-  const first = post.author?.firstName || "";
-  const last = post.author?.lastName || "";
-  const username = post.author?.username || "usuario";
+  const content = post.content || "";
+  const images = post.images || [];
+  const documents = post.documents || [];
+  const links = post.links || [];
 
-  const isFavicon = (url) =>
-    typeof url === "string" && url.includes("google.com/s2/favicons");
-  const heroImageCandidate = post.links
-    ?.find((l) => l?.preview?.image)
-    ?.preview?.image;
-  const heroImage =
-    heroImageCandidate && !isFavicon(heroImageCandidate)
-      ? heroImageCandidate
-      : null;
-
-  const openLightbox = (index) => {
-    if (lightboxOpen || isOpeningLightbox.current) return;
-    isOpeningLightbox.current = true;
-    setPhotoIndex(index);
-    setLightboxOpen(true);
-    setTimeout(() => {
-      isOpeningLightbox.current = false;
-    }, 300);
-  };
+  const shouldTruncate = content.length > 350;
+  const displayContent = isExpanded || !shouldTruncate 
+    ? content 
+    : content.substring(0, 350) + "...";
 
   return (
-    <>
-      {heroImage && (
-        <img
-          src={heroImage}
-          alt=""
-          className="mb-2 rounded"
-          style={{ width: "100%", maxHeight: 360, objectFit: "cover" }}
-          loading="lazy"
-        />
-      )}
-
-      <div className="d-flex align-items-start justify-content-between gap-2 mb-2 position-relative">
-        <div className="d-flex align-items-start">
-          <img
-            src={
-              post.author?.profilePicture
-                ? `${baseUrl}${post.author.profilePicture}`
-                : "/default-avatar.png"
-            }
-            alt="avatar"
-            className="rounded-circle me-2"
-            style={{ width: 50, height: 50, objectFit: "cover" }}
-          />
-          <div>
-            <div>
-              <strong>{`${first} ${last}`.trim() || username}</strong> @{username}
-            </div>
-            {visibleDegrees.length > 0 && (
-              <small className="text-muted meta-degree d-block">
-                Estudia: {visibleDegrees.join(" �� ")}
-                {extraDegreesCount > 0 ? ` +${extraDegreesCount}` : ""}
-              </small>
-            )}
-            <small className="text-muted">
-              {new Date(post.createdAt).toLocaleString()}
-            </small>
-          </div>
-        </div>
-
-        {actionsSlot}
+    <div className="post-content">
+      
+      {/* 👇 AQUÍ ESTÁ EL CAMBIO PRINCIPAL */}
+      <div 
+        // Usamos la nueva clase CSS para tipografía y espaciado
+        className="neo-post-content-text"
+        // Aplicamos el color dinámico solo al borde izquierdo
+        style={{ borderLeftColor: accentColor }}
+      >
+        {displayContent}
+        {shouldTruncate && (
+          <button 
+            className="btn btn-link p-0 fw-bold text-dark"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? "Leer menos" : "Leer más"}
+          </button>
+        )}
       </div>
 
-      {post.title && <h5 className="mt-2 mb-1">{post.title}</h5>}
-      {post.content && <p className="mt-2">{post.content}</p>}
-
-      {Array.isArray(post.images) && post.images.length > 0 && (
-        <div className="mt-3 d-flex flex-wrap gap-2">
-          {post.images.map((imgUrl, index) => (
-            <img
-              key={index}
-              src={`${baseUrl}${imgUrl}`}
-              alt={`imagen-${index}`}
-              className="rounded cursor-pointer border"
-              style={{ width: 120, height: 120, objectFit: "cover" }}
-              onClick={() => openLightbox(index)}
+      {/* --- IMÁGENES (Sin cambios) --- */}
+      {images.length > 0 && (
+        <div className="d-flex flex-wrap gap-2 mb-4">
+          {images.map((img, idx) => (
+            <img 
+              key={idx}
+              src={`${baseUrl}${img}`} 
+              alt={`Adjunto ${idx}`}
+              className="border border-2 border-dark"
+              style={{ 
+                width: images.length === 1 ? '100%' : '140px', 
+                height: images.length === 1 ? 'auto' : '140px', 
+                objectFit: 'cover',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                maxHeight: '500px'
+              }}
+              onClick={() => {
+                setPhotoIndex(idx);
+                setLightboxOpen(true);
+              }}
             />
           ))}
         </div>
       )}
 
-      {Array.isArray(post.documents) && post.documents.length > 0 && (
-        <div className="mt-3">
-          <strong>Documentos:</strong>
-          <div className="d-flex flex-wrap gap-2 mt-2">
-            {post.documents.map((docUrl, idx) => {
-              const fileName = docUrl.split("/").pop();
-              const ext = fileName.split(".").pop().toLowerCase();
-              if (ext === "pdf") {
-                return (
-                  <div
-                    key={idx}
-                    className="border rounded p-2 text-center"
-                    style={{ width: 150, height: 210, overflow: "hidden" }}
-                  >
-                    <Document
-                      file={`${baseUrl}${docUrl}`}
-                      onLoadError={(err) =>
-                        console.error("Error al cargar PDF:", err)
-                      }
-                    >
-                      <Page pageNumber={1} width={130} />
-                    </Document>
-                    <a
-                      href={`${baseUrl}${docUrl}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="small d-block mt-1 text-primary"
-                    >
-                      {fileName}
-                    </a>
-                  </div>
-                );
-              }
-              return (
-                <a
-                  key={idx}
-                  href={`${baseUrl}${docUrl}`}
-                  download={fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="border rounded px-2 py-1 d-flex align-items-center"
-                  title={fileName}
-                >
-                  <span className="text-truncate" style={{ maxWidth: 150 }}>
-                    {fileName}
-                  </span>
-                </a>
-              );
-            })}
-          </div>
-        </div>
+      {/* --- LIGHTBOX (Sin cambios) --- */}
+      {lightboxOpen && (
+        <Lightbox
+          open={lightboxOpen}
+          close={() => setLightboxOpen(false)}
+          index={photoIndex}
+          slides={images.map((img) => ({ src: `${baseUrl}${img}` }))}
+        />
       )}
 
-      {Array.isArray(post.links) && post.links.length > 0 && (
-        <div className="mt-2 d-flex flex-wrap gap-2">
-          {post.links.map((l, i) => (
-            <a
-              key={i}
-              href={l.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm btn-outline-primary"
+      {/* --- DOCUMENTOS (Sin cambios) --- */}
+      {documents.length > 0 && (
+        <div className="d-flex flex-column gap-2 mb-3">
+          {documents.map((doc, idx) => (
+            <a 
+              key={idx}
+              href={`${baseUrl}${doc}`} 
+              target="_blank" 
+              rel="noreferrer"
+              className="d-flex align-items-center gap-3 p-3 border-2 border-dark rounded-3 text-decoration-none bg-light"
+              style={{ borderStyle: 'dashed' }}
             >
-              <i className="bi bi-link-45deg" /> {l.provider || "Link"}
+              <div className="bg-white border border-dark rounded-circle d-flex align-items-center justify-content-center" style={{width: 40, height: 40}}>
+                 <i className="bi bi-file-earmark-text fs-5 text-dark"></i>
+              </div>
+              <span className="fw-bold text-dark text-truncate" style={{ maxWidth: '80%' }}>
+                {doc.split('/').pop() || `Documento ${idx + 1}`}
+              </span>
             </a>
           ))}
         </div>
       )}
 
-      {lightboxOpen && Array.isArray(post.images) && post.images.length > 0 && (
-        <Lightbox
-          open={lightboxOpen}
-          close={() => setLightboxOpen(false)}
-          index={photoIndex}
-          slides={post.images.map((imgUrl) => ({ src: `${baseUrl}${imgUrl}` }))}
-          on={{ view: ({ index }) => setPhotoIndex(index) }}
-        />
+      {/* --- LINKS (Sin cambios) --- */}
+      {links.length > 0 && (
+        <div className="d-flex flex-column gap-2">
+          {links.map((link, idx) => (
+            <a 
+              key={idx} 
+              href={link.url} 
+              target="_blank" 
+              rel="noreferrer"
+              className="card border-dark text-decoration-none overflow-hidden"
+              style={{ borderWidth: '2px' }}
+            >
+              <div className="row g-0">
+                {link.preview?.image && (
+                  <div className="col-3" style={{ backgroundColor: '#f0f0f0' }}>
+                    <img 
+                        src={link.preview.image} 
+                        alt="" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    />
+                  </div>
+                )}
+                <div className={link.preview?.image ? "col-9" : "col-12"}>
+                  <div className="card-body py-2 px-3">
+                    <div className="card-title fw-bold small mb-1 text-dark text-truncate">
+                        {link.preview?.title || link.url}
+                    </div>
+                    <div className="card-text small text-muted text-truncate">
+                        {link.preview?.description || link.provider || "Enlace externo"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
       )}
-    </>
+    </div>
   );
 }

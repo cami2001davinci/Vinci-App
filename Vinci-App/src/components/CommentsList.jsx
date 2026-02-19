@@ -1,686 +1,326 @@
-// src/components/CommentsList.jsx
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "../api/axiosInstance";
 import CommentForm from "./CommentForm";
 import { useAuth } from "../context/AuthContext";
 import { CommentCountStore } from "../store/commentCountStore.js";
+import UserAvatar from "./UserAvatar"; 
+import { socket } from "../services/socket"; 
+import { useConfirm } from "../context/ConfirmContext"; 
+import "../styles/Comments.css";
 
-/* ========================================================================
-   COMMENT ITEM (comentario individual + replies)
-   ======================================================================== */
-function CommentItem({
-  comment,
-  postId,
-  depth = 0,
-  highlightCommentId = null,
-  expandPath = [],
-  forceExpandAll = false,
-  onCommentChanged,
-}) {
+function timeAgoShort(date) {
+  if (!date) return "";
+  const diff = Math.floor((new Date() - new Date(date)) / 1000);
+  if (diff < 60) return "ahora";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
+  return `${Math.floor(diff / 86400)} d`;
+}
+
+function CommentItem({ comment, postId, depth = 0 }) {
   const { user } = useAuth();
-
+  const confirm = useConfirm(); 
   const [commentData, setCommentData] = useState(comment);
-  const commentId = commentData?._id;
-  const parentCommentId =
-    typeof commentData?.parentComment === "object"
-      ? commentData.parentComment?._id ||
-        commentData.parentComment?.toString?.()
-      : commentData?.parentComment || null;
-
+  
   const [replies, setReplies] = useState([]);
   const [showReplies, setShowReplies] = useState(false);
   const [showReplyForm, setShowReplyForm] = useState(false);
+  const [hasLoadedReplies, setHasLoadedReplies] = useState(false); 
+
   const [likes, setLikes] = useState(comment.likedBy?.length || 0);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState(comment.content || "");
+  const [hasLiked, setHasLiked] = useState(comment.likedBy?.includes(user?._id));
   const [showMenu, setShowMenu] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(comment.content);
+  const [isDeleted, setIsDeleted] = useState(false); 
 
-  const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
-  const [showNewBadge, setShowNewBadge] = useState(
-    highlightCommentId === commentId
-  );
-
-  const containerRef = useRef(null);
+  const isAuthor = user?._id === commentData.author?._id;
+  const authorName = commentData.author?.username || "Usuario";
+  const commentId = commentData._id;
+  const menuRef = useRef(null);
 
   useEffect(() => {
-    setCommentData(comment);
-    setLikes(comment.likedBy?.length || 0);
-    setEditedContent(comment.content || "");
-  }, [comment]);
-
-  // Datos del autor
-  const handle = commentData?.author?.username || "usuario";
-  const displayName = `${commentData?.author?.firstName || ""} ${
-    commentData?.author?.lastName || ""
-  }`
-    .trim()
-    .replace(/\s+/g, " ");
-
-  const authorDegrees = Array.isArray(commentData?.author?.degrees)
-    ? commentData.author.degrees
-    : [];
-  const degreeNames = authorDegrees.map((deg) => deg?.name).filter(Boolean);
-  const visibleDegrees = degreeNames.slice(0, 2);
-  const extraDegreesCount = Math.max(
-    degreeNames.length - visibleDegrees.length,
-    0
-  );
-
-  const isHighlighted = highlightCommentId === commentId;
-  const shouldExpand = commentId
-    ? expandPath.includes(commentId)
-    : false;
-
-  const rawAuthor = commentData?.author;
-  const authorId =
-    typeof rawAuthor === "object" && rawAuthor?._id
-      ? rawAuthor._id
-      : rawAuthor;
-
-  const currentUserId = user?._id || user?.id;
-  const isAuthor =
-    currentUserId &&
-    authorId &&
-    authorId.toString() === currentUserId.toString();
-
-  const serverUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
-  const avatarUrl = commentData?.author?.profilePicture
-    ? `${serverUrl}${commentData.author.profilePicture}`
-    : "/default-avatar.png";
-
-  /* ---------------------------- Acciones ---------------------------- */
-
-  const toggleLike = async () => {
-    if (!commentId) return;
-    try {
-      setErrorMsg("");
-      const res = await axios.put(`/comments/${commentId}/like`);
-      setLikes(res.data.likesCount);
-
-      window.dispatchEvent(
-        new CustomEvent("vinci:comment-like", {
-          detail: {
-            postId,
-            commentId,
-            likesCount: res.data.likesCount,
-          },
-        })
-      );
-    } catch (error) {
-      console.error("Error al dar like al comentario:", error);
-      const msg =
-        error.response?.data?.message || "No se pudo dar like al comentario.";
-      setErrorMsg(msg);
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setShowMenu(false);
     }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // --- SOCKETS PARA ESTE COMENTARIO ---
+  useEffect(() => {
+    const handleNewReply = (payload) => {
+        const newComment = payload.newComment || payload;
+        
+        // Si soy yo, lo ignoro (manual)
+        const isMe = user && (newComment.author?._id?.toString() === user._id?.toString() || newComment.author === user._id);
+        if (isMe) return;
+
+        if (newComment.parentComment === commentId) {
+            setReplies(prev => {
+                if (prev.some(r => r._id === newComment._id)) return prev;
+                return [newComment, ...prev];
+            });
+            setCommentData(prev => ({
+                 ...prev,
+                 replies: [...(prev.replies || []), newComment._id]
+            }));
+            if (!showReplies) setShowReplies(true);
+        }
+    };
+
+    const handleUpdate = (payload) => {
+        if (payload.commentId === commentId) {
+            setCommentData(prev => ({ ...prev, content: payload.content }));
+        }
+    };
+
+    const handleDelete = (payload) => {
+        if (payload.commentId === commentId) {
+            setIsDeleted(true);
+        }
+        if (payload.parentComment === commentId) {
+             setReplies(prev => prev.filter(r => r._id !== payload.commentId));
+             setCommentData(prev => ({
+                 ...prev,
+                 replies: (prev.replies || []).filter(id => id !== payload.commentId)
+             }));
+        }
+    };
+
+    socket.on("post:comment", handleNewReply);
+    socket.on("comment:update", handleUpdate);
+    socket.on("comment:delete", handleDelete);
+
+    return () => {
+        socket.off("post:comment", handleNewReply);
+        socket.off("comment:update", handleUpdate);
+        socket.off("comment:delete", handleDelete);
+    };
+  }, [commentId, showReplies, user]);
+
+  const fetchReplies = async () => {
+    try {
+      const { data } = await axios.get(`/comments/${commentId}/replies`);
+      setReplies(data);
+      setHasLoadedReplies(true);
+    } catch (err) { console.error(err); }
   };
 
-  const fetchReplies = useCallback(async () => {
-    if (!commentId) return;
-    try {
-      const res = await axios.get(`/comments/replies/${commentId}`);
-      setReplies(res.data || []);
-    } catch (err) {
-      console.error("Error al obtener respuestas:", err);
-      setErrorMsg("No se pudieron cargar las respuestas.");
+  const handleToggleReplies = async () => {
+    if (!showReplies && !hasLoadedReplies && (commentData.replies?.length > 0)) {
+       await fetchReplies();
     }
-  }, [commentId]);
-
-  const handleToggleReplies = () => {
-    if (!showReplies) {
-      fetchReplies();
-    }
-    setShowReplies((prev) => !prev);
+    setShowReplies(!showReplies);
   };
 
-  const handleUpdate = async () => {
-    if (!commentId) return;
+  const handleToggleLike = async () => {
     try {
-      setErrorMsg("");
-      const { data } = await axios.put(`/comments/${commentId}`, {
-        content: editedContent,
-      });
-      setIsEditing(false);
-      setEditedContent(data.content ?? editedContent);
-      setCommentData((prev) => ({ ...(prev || {}), ...data }));
-      onCommentChanged?.();
-
-      window.dispatchEvent(
-        new CustomEvent("vinci:comment-update", {
-          detail: {
-            postId,
-            commentId,
-            parentComment: parentCommentId,
-            comment: data,
-          },
-        })
-      );
-    } catch (err) {
-      console.error("Error al editar comentario:", err);
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        "No se pudo editar el comentario.";
-      setErrorMsg(msg);
-    }
+      const { data } = await axios.put(`/comments/${commentId}/like`);
+      setLikes(data.likesCount);
+      setHasLiked(data.liked);
+    } catch (err) { console.error(err); }
   };
 
   const handleDelete = async () => {
-    if (!commentId) return;
+    const isConfirmed = await confirm({
+        title: "Borrar Comentario",
+        message: "¿Estás seguro de eliminar este comentario?",
+        confirmText: "Sí, borrar",
+        variant: "danger"
+    });
+
+    if (!isConfirmed) return;
+
     try {
-      setErrorMsg("");
       await axios.delete(`/comments/${commentId}`);
-      setConfirmingDelete(false);
-
-      // Refrescar lista en este post
-      onCommentChanged?.();
-
-      // Avisar globalmente para otras vistas (Home, DegreePage, etc.)
-      window.dispatchEvent(
-        new CustomEvent("vinci:comment-delete", {
-          detail: {
-            postId,
-            commentId,
-            parentComment: parentCommentId,
-          },
-        })
-      );
-    } catch (err) {
-      console.error("Error al eliminar comentario:", err);
-      let msg =
-        err.response?.data?.message || "No se pudo eliminar el comentario.";
-      if (err.response?.status === 403) {
-        msg = "Solo podés eliminar tus propios comentarios.";
-      }
-      setErrorMsg(msg);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const handleReport = async () => {
-    if (!commentId) return;
-    try {
-      setErrorMsg("");
-      setSuccessMsg("");
-      await axios.put(`/comments/flag/${commentId}`);
-      setSuccessMsg("Comentario reportado. Gracias por avisar 💬");
-    } catch (err) {
-      console.error("Error al reportar comentario:", err);
-      const msg =
-        err.response?.data?.message ||
-        "No se pudo reportar el comentario. Intentalo más tarde.";
-      setErrorMsg(msg);
-    }
-  };
-
-  const handleNewReply = () => {
-    fetchReplies();
-    setShowReplyForm(false);
-    setShowReplies(true);
-    onCommentChanged?.();
-  };
-
-  /* ------------------------ Efectos visuales ------------------------ */
-
-  // Scroll suave al comentario destacado
-  useEffect(() => {
-    if (isHighlighted && containerRef.current) {
-      containerRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [isHighlighted]);
-
-  // Expandir/colapsar respuestas según "Todos" o path
-  useEffect(() => {
-    if (forceExpandAll) {
-      if (!showReplies) {
-        setShowReplies(true);
-        fetchReplies();
-      }
-    } else {
-      if (shouldExpand) {
-        if (!showReplies) {
-          setShowReplies(true);
-          fetchReplies();
-        }
-      } else {
-        if (showReplies) {
-          setShowReplies(false);
-        }
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forceExpandAll, shouldExpand]);
-
-  // Badge "Nuevo comentario"
-  useEffect(() => {
-    if (isHighlighted) {
-      setShowNewBadge(true);
-      const t = setTimeout(() => setShowNewBadge(false), 4000);
-      return () => clearTimeout(t);
-    } else {
-      setShowNewBadge(false);
-    }
-  }, [isHighlighted]);
-
-  useEffect(() => {
-    if (!commentId) return;
-
-    const normalizeId = (value) => {
-      if (!value) return null;
-      if (typeof value === "string") return value;
-      if (typeof value === "object") {
-        if (value._id) return value._id.toString();
-        if (typeof value.toString === "function") {
-          return value.toString();
-        }
-      }
-      return null;
-    };
-
-    const handleCommentLike = (e) => {
-      const { commentId: payloadId, likesCount } = e.detail || {};
-      if (!payloadId || typeof likesCount !== "number") return;
-      if (payloadId === commentId) {
-        setLikes(likesCount);
-      }
-    };
-
-    const handleCommentUpdate = (e) => {
-      const { commentId: payloadId, comment: updated, parentComment } =
-        e.detail || {};
-      if (!payloadId) return;
-
-      if (payloadId === commentId) {
-        if (updated) {
-          setCommentData((prev) => ({ ...(prev || {}), ...updated }));
-          if (Array.isArray(updated.likedBy)) {
-            setLikes(updated.likedBy.length);
-          }
-          if (typeof updated.content === "string") {
-            setEditedContent(updated.content);
-          }
-        } else if (typeof e.detail?.content === "string") {
-          const newContent = e.detail.content;
-          setCommentData((prev) => ({
-            ...(prev || {}),
-            content: newContent,
-          }));
-          setEditedContent(newContent);
-        }
-      } else {
-        const normalizedParent = normalizeId(parentComment);
-        if (normalizedParent && normalizedParent === commentId && showReplies) {
-          fetchReplies();
-        }
-      }
-    };
-
-    const handleNewReply = (e) => {
-      const { newComment } = e.detail || {};
-      const replyParent = normalizeId(newComment?.parentComment);
-      if (replyParent && replyParent === commentId && showReplies) {
-        fetchReplies();
-      }
-    };
-
-    const handleCommentDelete = (e) => {
-      const { commentId: deletedId, parentComment } = e.detail || {};
-      if (!deletedId) return;
-      const normalizedParent = normalizeId(parentComment);
-      if (normalizedParent && normalizedParent === commentId) {
-        setReplies((prev) => prev.filter((reply) => reply._id !== deletedId));
-      }
-      if (deletedId === commentId) {
-        setShowReplies(false);
-        setReplies([]);
-      }
-    };
-
-    window.addEventListener("vinci:comment-like", handleCommentLike);
-    window.addEventListener("vinci:comment-update", handleCommentUpdate);
-    window.addEventListener("vinci:post-comment", handleNewReply);
-    window.addEventListener("vinci:comment-delete", handleCommentDelete);
-
-    return () => {
-      window.removeEventListener("vinci:comment-like", handleCommentLike);
-      window.removeEventListener("vinci:comment-update", handleCommentUpdate);
-      window.removeEventListener("vinci:post-comment", handleNewReply);
-      window.removeEventListener("vinci:comment-delete", handleCommentDelete);
-    };
-  }, [commentId, showReplies, fetchReplies]);
-
-  /* ---------------------------- Render ---------------------------- */
-
-  return (
-    <div
-      ref={containerRef}
-      className={`comment-item border rounded p-3 mb-2 ${
-        isHighlighted ? "highlight-yellow" : "bg-white"
-      }`}
-      style={{ marginLeft: depth * 16 }}
-      data-comment-id={commentId}
-    >
-      <div className="d-flex justify-content-between align-items-start">
-        <div className="d-flex align-items-start">
-          <img
-            src={avatarUrl}
-            alt="avatar"
-            className="comment-avatar rounded-circle me-2"
-            style={{ width: "40px", height: "40px", objectFit: "cover" }}
-          />
-          <div>
-            <div className="fw-bold">
-              {displayName || handle} @{handle}
-            </div>
-
-            {visibleDegrees.length > 0 && (
-              <small className="text-muted meta-degree d-block">
-                Estudia: {visibleDegrees.join(" · ")}
-                {extraDegreesCount > 0 ? ` +${extraDegreesCount}` : ""}
-              </small>
-            )}
-
-            {showNewBadge && (
-              <span className="badge bg-warning text-dark me-2">
-                Nuevo comentario
-              </span>
-            )}
-
-            {isEditing ? (
-              <input
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                className="form-control form-control-sm mt-1"
-              />
-            ) : (
-              <p className="text-muted mb-1">{commentData?.content}</p>
-            )}
-          </div>
-        </div>
-
-        {!isEditing && (
-          <div className="position-relative">
-            <button
-              onClick={() => setShowMenu((prev) => !prev)}
-              className="btn btn-sm btn-light"
-            >
-              <i className="bi bi-three-dots"></i>
-            </button>
-
-            {showMenu && (
-              <div
-                className="dropdown-menu show p-2"
-                style={{ right: 0, zIndex: 1000, position: "absolute" }}
-              >
-                {isAuthor ? (
-                  <>
-                    <button
-                      className="dropdown-item"
-                      onClick={() => {
-                        setIsEditing(true);
-                        setShowMenu(false);
-                      }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="dropdown-item text-danger"
-                      onClick={() => {
-                        setConfirmingDelete(true);
-                        setShowMenu(false);
-                      }}
-                    >
-                      Eliminar
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    className="dropdown-item text-warning"
-                    onClick={() => {
-                      handleReport();
-                      setShowMenu(false);
-                    }}
-                  >
-                    Reportar comentario
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Mensajes de error / éxito */}
-      {errorMsg && (
-        <div className="alert alert-danger py-1 px-2 mt-2 ms-5 small">
-          {errorMsg}
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="alert alert-success py-1 px-2 mt-2 ms-5 small">
-          {successMsg}
-        </div>
-      )}
-
-      {/* Confirm de eliminación */}
-      {confirmingDelete && (
-        <div className="alert alert-warning py-2 px-3 d-flex justify-content-between align-items-center mt-2 ms-5">
-          <span className="small">¿Eliminar este comentario?</span>
-          <div className="d-flex gap-2">
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => setConfirmingDelete(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-danger"
-              onClick={handleDelete}
-            >
-              Eliminar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Botones */}
-      <div className="d-flex gap-2 mt-2 ms-5">
-        {isEditing ? (
-          <>
-            <button onClick={handleUpdate} className="btn btn-success btn-sm">
-              Guardar
-            </button>
-            <button
-              onClick={() => setIsEditing(false)}
-              className="btn btn-secondary btn-sm"
-            >
-              Cancelar
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => setShowReplyForm((prev) => !prev)}
-              className="btn btn-light btn-sm"
-            >
-              <i className="bi bi-reply"></i> Responder
-            </button>
-            <button
-              onClick={handleToggleReplies}
-              className="btn btn-light btn-sm"
-            >
-              <i className="bi bi-chat-dots"></i>{" "}
-              {showReplies ? "Ocultar respuestas" : "Ver respuestas"}
-            </button>
-            <button onClick={toggleLike} className="btn btn-light btn-sm">
-              <i className="bi bi-heart"></i> {likes}
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Formulario de respuesta */}
-      {showReplyForm && (
-        <CommentForm
-          postId={postId}
-          parentComment={commentId}
-          onNewComment={handleNewReply}
-        />
-      )}
-
-      {/* Subcomentarios */}
-      {showReplies &&
-        replies.map((reply) => (
-          <CommentItem
-            key={reply._id}
-            comment={reply}
-            postId={postId}
-            depth={depth + 1}
-            onCommentChanged={onCommentChanged}
-            highlightCommentId={highlightCommentId}
-            expandPath={expandPath}
-            forceExpandAll={forceExpandAll}
-          />
-        ))}
-    </div>
-  );
-}
-
-/* ========================================================================
-   COMMENTS LIST
-   ======================================================================== */
-function CommentsList({
-  postId,
-  highlightCommentId = null,
-  forceExpandAll = false,
-  onCommentsCountChange,
-}) {
-  const [comments, setComments] = useState([]);
-  const [expandPath, setExpandPath] = useState([]);
-  const [filterMode, setFilterMode] = useState("recent"); // "recent" | "all"
-
- const loadComments = async () => {
-  try {
-    const res = await axios.get(`/comments/post/${postId}`);
-    const all = res.data || [];
-
-    // solo comentarios raíz
-    const rootComments = all.filter((c) => !c.parentComment);
-    setComments(rootComments);
-
-    // 🔥 actualizar el store global
-    CommentCountStore.setCount(postId, rootComments.length);
-
-    // manejo del highlight como ya tenías…
-    if (highlightCommentId) {
-      try {
-        const resPath = await axios.get(`/comments/path/${highlightCommentId}`);
-        const pathIds = Array.isArray(resPath.data) ? resPath.data : [];
-        setExpandPath(pathIds);
-      } catch (err) {
-        if (err.response?.status === 404) {
-          console.warn("[CommentsList] highlight 404");
-          setExpandPath([]);
-        }
-      }
-    } else {
-      setExpandPath([]);
-    }
-  } catch (err) {
-    console.error("Error al cargar comentarios:", err);
-  }
-};
-
-  useEffect(() => {
-    loadComments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId, highlightCommentId]);
-
-  // Eventos globales de update/delete
-  useEffect(() => {
-    const handleUpdate = (e) => {
-      const { postId: eventPostId } = e.detail || {};
-      if (eventPostId !== postId) return;
-      loadComments();
-    };
-
-    const handleDelete = (e) => {
-      const { postId: eventPostId } = e.detail || {};
-      if (eventPostId !== postId) return;
-      loadComments();
-    };
-
-    window.addEventListener("vinci:comment-update", handleUpdate);
-    window.addEventListener("vinci:comment-delete", handleDelete);
-
-    return () => {
-      window.removeEventListener("vinci:comment-update", handleUpdate);
-      window.removeEventListener("vinci:comment-delete", handleDelete);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId]);
-
-  const getSortedComments = () => {
-    const withMeta = comments.map((c) => {
-      const createdAt = c.createdAt ? new Date(c.createdAt).getTime() : 0;
-      return { ...c, createdAt };
+    const isConfirmed = await confirm({
+        title: "Reportar Comentario",
+        message: "Si crees que este comentario incumple las normas, repórtalo.",
+        confirmText: "Reportar",
+        variant: "default"
     });
 
-    return withMeta
-      .slice()
-      .sort((a, b) => b.createdAt - a.createdAt); // nuevos primero
+    if (!isConfirmed) return;
+
+    try {
+        setIsDeleted(true); 
+        await axios.put(`/comments/${commentId}/flag`); 
+    } catch (err) { 
+        console.error(err); 
+        setIsDeleted(false); 
+    }
   };
 
-  const sortedComments = getSortedComments();
-  const effectiveForceExpandAll = forceExpandAll || filterMode === "all";
+  const handleEditSubmit = async () => {
+    try {
+        await axios.put(`/comments/${commentId}`, { content: editContent });
+        setIsEditing(false);
+    } catch (err) { console.error(err); }
+  };
+
+  if (isDeleted) return null;
 
   return (
-    <div className="mt-2">
-      {/* Controles: "Más recientes" y "Todos" */}
-      <div className="d-flex align-items-center mb-2">
-        <span className="me-2 text-muted small">Ordenar por:</span>
-        <div className="btn-group btn-group-sm" role="group">
-          <button
-            type="button"
-            className={`btn btn-light ${
-              filterMode === "recent" ? "active fw-semibold" : ""
-            }`}
-            onClick={() => setFilterMode("recent")}
-          >
-            Más recientes
-          </button>
-          <button
-            type="button"
-            className={`btn btn-light ${
-              filterMode === "all" ? "active fw-semibold" : ""
-            }`}
-            onClick={() => setFilterMode("all")}
-          >
-            Todos
-          </button>
+    <div className="neo-comment-item">
+      <UserAvatar user={commentData.author} className="neo-comment-avatar" />
+      <div className="neo-comment-body">
+        <div className="neo-comment-header d-flex justify-content-between align-items-center w-100">
+          <div>
+            <span className="neo-comment-author">{authorName}</span>
+            <span className="neo-comment-time ms-2">• {timeAgoShort(commentData.createdAt)}</span>
+          </div>
+          {user && (
+            <div className="neo-options-menu" ref={menuRef}>
+                <button className="neo-options-trigger" onClick={() => setShowMenu(!showMenu)}>
+                    <i className="bi bi-three-dots"></i>
+                </button>
+                {showMenu && (
+                    <div className="neo-dropdown">
+                        {isAuthor ? (
+                            <>
+                                <button className="neo-dropdown-item" onClick={() => { setIsEditing(true); setShowMenu(false); }}>Editar</button>
+                                <button className="neo-dropdown-item neo-dropdown-item--danger" onClick={handleDelete}>Eliminar</button>
+                            </>
+                        ) : (
+                            <button className="neo-dropdown-item neo-dropdown-item--danger" onClick={handleReport}>Reportar</button>
+                        )}
+                    </div>
+                )}
+            </div>
+          )}
         </div>
-      </div>
 
-      {sortedComments.map((comment) => (
-        <CommentItem
-          key={comment._id}
-          comment={comment}
-          postId={postId}
-          onCommentChanged={loadComments}
-          highlightCommentId={highlightCommentId}
-          expandPath={expandPath}
-          forceExpandAll={effectiveForceExpandAll}
-        />
-      ))}
+        {isEditing ? (
+            <div className="neo-edit-container">
+                <textarea className="neo-edit-input" rows={2} value={editContent} onChange={(e) => setEditContent(e.target.value)} />
+                <div className="neo-edit-actions">
+                    <button className="neo-btn-xs bg-white" onClick={() => setIsEditing(false)}>Cancelar</button>
+                    <button className="neo-btn-xs bg-dark text-white" onClick={handleEditSubmit}>Guardar</button>
+                </div>
+            </div>
+        ) : (
+            <div className="neo-comment-bubble">{commentData.content}</div>
+        )}
+
+        {!isEditing && (
+            <div className="neo-comment-actions">
+                <button className={`neo-action-btn ${hasLiked ? 'neo-action-btn--active' : ''}`} onClick={handleToggleLike}>
+                    <i className={hasLiked ? "bi bi-hand-thumbs-up-fill" : "bi bi-hand-thumbs-up"}></i>
+                    {likes > 0 && <span>{likes}</span>}
+                </button>
+                <button className="neo-action-btn" onClick={() => setShowReplyForm(!showReplyForm)}>
+                    Responder
+                </button>
+                {(commentData.replies?.length > 0 || replies.length > 0) && (
+                    <button className="neo-action-btn" onClick={handleToggleReplies}>
+                        {showReplies ? "Ocultar" : `Ver respuestas (${commentData.replies?.length || replies.length})`}
+                    </button>
+                )}
+            </div>
+        )}
+
+        {showReplyForm && (
+          <div className="mt-3">
+            <CommentForm 
+              postId={postId} 
+              parentComment={commentId}
+              onNewComment={(newReply) => {
+                setReplies(prev => [newReply, ...prev]);
+                setCommentData(prev => ({
+                    ...prev,
+                    replies: [...(prev.replies || []), newReply._id]
+                }));
+                // Incremento MANUAL del Global Store para mis respuestas
+                CommentCountStore.increment(postId);
+
+                setShowReplyForm(false);
+                setShowReplies(true);
+              }}
+            />
+          </div>
+        )}
+
+        {showReplies && replies.length > 0 && (
+          <div className="neo-replies-thread">
+            {replies.map(reply => (
+              <CommentItem key={reply._id} comment={reply} postId={postId} depth={depth + 1} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-export default CommentsList;
+export default function CommentsList({ postId }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth(); 
+
+  useEffect(() => {
+    if(!postId) return;
+    const fetchComments = async () => {
+      try {
+        setLoading(true);
+        const { data } = await axios.get(`/comments/post/${postId}`);
+        const rootComments = Array.isArray(data) ? data.filter(c => !c.parentComment) : [];
+        setComments(rootComments);
+      } catch (err) { console.error(err); } 
+      finally { setLoading(false); }
+    };
+    fetchComments();
+  }, [postId]);
+
+  useEffect(() => {
+    if (!postId) return;
+
+    // A. Nuevo Comentario (Solo lista visual)
+    const handleSocketNewComment = (payload) => {
+        const newComment = payload.newComment || payload;
+        if (newComment.post !== postId && newComment.post?._id !== postId) return;
+
+        // Si soy yo, lo ignoro (manual)
+        const isMe = user && (newComment.author?._id?.toString() === user._id?.toString() || newComment.author === user._id);
+        if (isMe) return;
+
+        if (!newComment.parentComment) {
+            setComments(prev => [newComment, ...prev]);
+        }
+    };
+
+    // B. Eliminar
+    const handleSocketDelete = (payload) => {
+        if (payload.postId !== postId) return;
+        if (!payload.parentComment) {
+            setComments(prev => prev.filter(c => c._id !== payload.commentId));
+        }
+    };
+
+    socket.on("post:comment", handleSocketNewComment);
+    socket.on("comment:delete", handleSocketDelete);
+
+    return () => {
+        socket.off("post:comment", handleSocketNewComment);
+        socket.off("comment:delete", handleSocketDelete);
+    };
+  }, [postId, user]);
+
+  if (loading) return <div className="p-3 text-center text-muted fw-bold">Cargando opiniones...</div>;
+
+  return (
+    <div className="neo-comments-section">
+      {comments.length === 0 ? (
+        <p className="text-muted small fst-italic">Sé el primero en comentar.</p>
+      ) : (
+        comments.map(comment => (
+          <CommentItem key={comment._id} comment={comment} postId={postId} />
+        ))
+      )}
+    </div>
+  );
+}

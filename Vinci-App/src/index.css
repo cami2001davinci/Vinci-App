@@ -1,77 +1,78 @@
+/* src/index.css */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* --- 🎨 PALETA BASE (Neobrutalism) --- */
+  --bg-app: #FDFBF7; /* Crema suave de fondo */
+  --text-main: #1A1A1A;
+  --border-black: #000000;
+  
+  /* Valores Estructurales */
+  --border-width: 2px;
+  --radius-card: 16px;
+  --radius-btn: 12px;
+  --shadow-hard: 4px 4px 0px 0px #000000;
+  --shadow-hover: 6px 6px 0px 0px #000000;
+  
+  /* --- 🎭 COLORES DE SAGAS (Por defecto: Vinci) --- */
+  --saga-color: #5D5FEF; /* Default Vinci Blue */
+  --saga-bg-light: #EEF2FF;
 }
 
-.new-posts-banner {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1050;
-  border-radius: 999px;
-  padding-inline: 1.5rem;
-}
+/* --- TEMA POR CARRERA (Atributos data-theme) --- */
+[data-theme="multimedial"] { --saga-color: #FFD600; --saga-bg-light: #FFF9C4; } /* Amarillo */
+[data-theme="grafico"]     { --saga-color: #FF6B6B; --saga-bg-light: #FFEBEE; } /* Rosa */
+[data-theme="videojuegos"] { --saga-color: #4D96FF; --saga-bg-light: #E3F2FD; } /* Azul */
+[data-theme="animacion"]   { --saga-color: #6BCB77; --saga-bg-light: #E8F5E9; } /* Verde */
+[data-theme="web"]         { --saga-color: #9D4EDD; --saga-bg-light: #F3E5F5; } /* Violeta */
+[data-theme="sistemas"]    { --saga-color: #FF4757; --saga-bg-light: #FFEBEE; } /* Rojo */
+[data-theme="cine"]        { --saga-color: #FF9F43; --saga-bg-light: #FFF3E0; } /* Naranja */
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-/* body {
+/* Reset Básico */
+body {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-} */
-
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: 'Degular', sans-serif; /* O tu fuente actual */
+  -webkit-font-smoothing: antialiased;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+/* Clases de Utilidad NEOBRUTALISTA */
+.neo-card {
+  background: white;
+  border: var(--border-width) solid var(--border-black);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hard);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.neo-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.neo-btn {
+  background-color: var(--saga-color);
+  color: white;
+  font-weight: bold;
+  border: var(--border-width) solid var(--border-black);
+  box-shadow: 2px 2px 0px 0px #000;
+  border-radius: var(--radius-btn);
+  padding: 0.5rem 1.5rem;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  text-transform: uppercase;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.neo-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px 0px #000;
 }
+
+.neo-input {
+  border: var(--border-width) solid var(--border-black);
+  border-radius: 8px;
+  padding: 10px;
+  font-weight: 500;
+  outline: none;
+  background: white;
+  box-shadow: 2px 2px 0px #000;
+}
+

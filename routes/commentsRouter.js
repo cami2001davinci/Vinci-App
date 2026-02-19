@@ -1,4 +1,4 @@
-// routes/commentsRoutes.js
+// src/routes/commentsRoutes.js (o commentsRouter.js)
 import express from 'express';
 import { createCommentSchema } from '../validations/postAndCommentValidation.js';
 import { validateBody } from '../Middleware/validate.js';
@@ -35,13 +35,12 @@ router.delete('/:commentId', protect, deleteComment);
 // Like/unlike comentario
 router.put('/:commentId/like', protect, toggleLikeOnComment);
 
-// Marcar comentario como inapropiado
-router.put('/flag/:commentId', protect, flagComment);
+router.put('/:commentId/flag', protect, flagComment);
 
-// Camino completo raíz → hijo → subhijo (para expandir hilo desde notificación)
-router.get('/path/:pathId', getCommentPath); // Cambio: ahora cubrimos /api/comments/path/:pathId que dispara el front
+// Camino completo raíz → hijo → subhijo
+router.get('/path/:pathId', getCommentPath); 
 
-// Subcomentarios (respuestas)
-router.get('/replies/:commentId', getRepliesToComment);
+// 👇 CORRECCIÓN AQUÍ: Cambiado para coincidir con el Frontend (/:id/replies)
+router.get('/:id/replies', getRepliesToComment);
 
 export default router;

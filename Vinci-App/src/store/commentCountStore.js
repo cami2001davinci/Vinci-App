@@ -35,11 +35,26 @@ export const CommentCountStore = {
       listeners.set(postId, new Set());
     }
     listeners.get(postId).add(callback);
+
+    // 👇 ESTA ES LA CORRECCIÓN CLAVE (BUENA PRÁCTICA)
+    // Devolvemos una función que el useEffect llamará al desmontar
+    return () => {
+      this.unsubscribe(postId, callback);
+    };
   },
 
   /** Desuscribir cuando el componente se desmonta */
   unsubscribe(postId, callback) {
-    listeners.get(postId)?.delete(callback);
+    const postListeners = listeners.get(postId);
+    if (postListeners) {
+      postListeners.delete(callback); // Borra el callback
+      
+      // OPTIMIZACIÓN DE MEMORIA:
+      // Si ya nadie escucha este post, borramos la entrada del mapa
+      if (postListeners.size === 0) {
+        listeners.delete(postId);
+      }
+    }
   },
 
   /** Notificar cambios a todos los suscriptores */
