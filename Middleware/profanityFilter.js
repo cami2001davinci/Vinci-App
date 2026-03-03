@@ -30,11 +30,11 @@ export const validateContentOnSave = function (next) {
   const { content, title } = this;
 
   if (content && contienePalabrasProhibidas(content)) {
-    return next(new Error('El contenido contiene lenguaje prohibido.'));
+    return next(new Error('El contenido contiene lenguaje inapropiado.'));
   }
 
   if (title && contienePalabrasProhibidas(title)) {
-    return next(new Error('El título contiene lenguaje prohibido.'));
+    return next(new Error('El título contiene lenguaje inapropiado.'));
   }
 
   next();
@@ -46,11 +46,11 @@ export const validateContentOnUpdate = function (next) {
   const title = update.title || (update.$set && update.$set.title);
 
   if (content && contienePalabrasProhibidas(content)) {
-    return next(new Error('El contenido actualizado contiene lenguaje prohibido.'));
+    return next(new Error('El contenido actualizado contiene lenguaje inapropiado.'));
   }
 
   if (title && contienePalabrasProhibidas(title)) {
-    return next(new Error('El título actualizado contiene lenguaje prohibido.'));
+    return next(new Error('El título actualizado contiene lenguaje inapropiado.'));
   }
 
   next();

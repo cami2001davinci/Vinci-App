@@ -2,14 +2,21 @@ import { useState, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axios from "../api/axiosInstance";
+import UserAvatar from "./UserAvatar"; // 👈 TU COMPONENTE MAESTRO
 import "../styles/PostForm.css";
 
 const PostForm = ({ onNewPost }) => {
   const { user, refreshUserProfile } = useAuth();
-  const { slug } = useParams(); // Puede ser undefined si estamos en Home
+  const { slug } = useParams(); 
 
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("comunidad");
+  
+  // Estados para Colaboradores y Links
+  const [title, setTitle] = useState("");
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -19,7 +26,6 @@ const PostForm = ({ onNewPost }) => {
 
   const imageInputRef = useRef(null);
   const docInputRef = useRef(null);
-  const baseUrl = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
   useEffect(() => {
     refreshUserProfile();
@@ -88,40 +94,44 @@ const PostForm = ({ onNewPost }) => {
       return;
     }
 
-    // --- LÓGICA DE SELECCIÓN DE CARRERA CORREGIDA ---
+    if (category === "colaboradores" && (!title.trim() || title.trim().length < 3)) {
+      setError("Los proyectos colaborativos requieren un Título descriptivo (mín. 3 letras).");
+      return;
+    }
+
     let degreeDataToSend = null;
     let degreeKey = null;
 
     if (slug) {
-        // Estamos en la página de una carrera específica
         degreeDataToSend = slug;
         degreeKey = "degreeSlug";
     } else if (user?.degrees && user.degrees.length > 0) {
-        // Estamos en Home: Usamos el ID de la primera carrera del usuario
         degreeDataToSend = user.degrees[0]._id || user.degrees[0];
-        // 👇 AQUÍ ESTABA EL ERROR: Cambiado de "degree" a "degreeId"
         degreeKey = "degreeId"; 
     } else {
         setError("Necesitas estar inscrito en una carrera para publicar.");
         return;
     }
-    // --------------------------------------------------------
 
     const formData = new FormData();
-    // Título automático porque el modelo lo requiere (required: true)
-    formData.append("title", "Publicación"); 
+    formData.append("title", category === "colaboradores" ? title.trim() : "Publicación"); 
     formData.append("content", content.trim());
     formData.append("category", category);
     
-    // Enviamos la clave correcta (degreeSlug o degreeId)
     if (degreeDataToSend && degreeKey) {
         formData.append(degreeKey, degreeDataToSend);
+    }
+
+    if (linkUrl.trim()) {
+      const linksArray = [{ url: linkUrl.trim() }];
+      formData.append("links", JSON.stringify(linksArray));
     }
     
     imageFiles.forEach((file) => formData.append("files", file));
     docFiles.forEach((file) => formData.append("files", file));
 
     setSaving(true);
+    setError(""); 
 
     try {
       const res = await axios.post("/posts", formData, {
@@ -134,14 +144,28 @@ const PostForm = ({ onNewPost }) => {
       );
 
       setContent("");
+      setTitle("");
+      setLinkUrl("");
+      setShowLinkInput(false);
       setCategory("comunidad");
       setImageFiles([]);
       setImagePreviews([]);
       setDocFiles([]);
-      setError("");
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.message || "Error al publicar");
+      console.error("Error al postear:", err.response?.data || err.message);
+      
+      const responseData = err.response?.data;
+      if (responseData) {
+        if (responseData.errors && Array.isArray(responseData.errors)) {
+          setError(responseData.errors[0]); 
+        } else if (responseData.message) {
+          setError(responseData.message);
+        } else {
+          setError("Error al publicar. Por favor, revisa los datos.");
+        }
+      } else {
+        setError("No se pudo conectar con el servidor.");
+      }
     } finally {
       setSaving(false);
     }
@@ -150,33 +174,66 @@ const PostForm = ({ onNewPost }) => {
   return (
     <div className="post-form-card">
       <div className="pf-header">
-        <img
-          src={
-            user?.profilePicture
-              ? `${baseUrl}${user.profilePicture}`
-              : "https://via.placeholder.com/50"
-          }
-          alt="Usuario"
-          className="pf-avatar"
-        />
+        
+        {/* 👇 LA MAGIA DEL COMPONENTE REUTILIZABLE */}
+        <UserAvatar user={user} className="neo-post-card__avatar" />
+
         <div>
-            <h6 className="pf-username">HOLA, {user?.firstName || 'Usuario'}</h6>
+            <h6 className="pf-username">HOLA, {user?.firstName || 'USUARIO'}</h6>
             <span className="pf-prompt">
                 {slug ? "Publicando en esta carrera" : `Publicando en ${user?.degrees?.[0]?.name || "tu muro"}`}
             </span>
         </div>
       </div>
 
-      {error && <div className="alert alert-danger border-2 border-dark mb-3">{error}</div>}
+      {error && (
+        <div style={{ backgroundColor: '#fee2e2', border: '2px solid #000', borderRadius: '8px', padding: '10px', marginBottom: '1rem', fontWeight: 'bold', color: '#b91c1c', boxShadow: '2px 2px 0px #000' }}>
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
+        
+        {category === "colaboradores" && (
+          <input 
+            type="text" 
+            className="pf-textarea" 
+            placeholder="Título de tu proyecto colaborativo..." 
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            style={{ fontWeight: '800', textTransform: 'uppercase' }}
+          />
+        )}
+
         <textarea
           className="pf-textarea"
           rows="3"
-          placeholder="Comparte tu idea, proyecto o duda..."
+          placeholder={category === "colaboradores" ? "Describe qué buscas, tecnologías, y objetivos de tu proyecto..." : "Comparte tu idea, proyecto o duda..."}
           value={content}
           onChange={(e) => setContent(e.target.value)}
         ></textarea>
+
+        {showLinkInput && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+             <input 
+               type="url" 
+               className="pf-textarea" 
+               placeholder="Enlace a tu GitHub o Portfolio..." 
+               value={linkUrl}
+               onChange={(e) => setLinkUrl(e.target.value)}
+               style={{ marginBottom: 0 }}
+             />
+             <button 
+               type="button" 
+               className="pf-submit-btn" 
+               onClick={() => {setShowLinkInput(false); setLinkUrl("");}}
+               style={{ backgroundColor: '#ef4444' }}
+               title="Cancelar link"
+             >
+               <i className="bi bi-x-lg"></i>
+             </button>
+          </div>
+        )}
 
         <input type="file" accept="image/*" multiple ref={imageInputRef} style={{ display: "none" }} onChange={handleImageChange} />
         <input type="file" accept=".pdf,.doc,.docx" multiple ref={docInputRef} style={{ display: "none" }} onChange={handleDocChange} />
@@ -205,8 +262,14 @@ const PostForm = ({ onNewPost }) => {
 
         <div className="pf-actions">
            <div className="pf-icons">
-              <i className="bi bi-image pf-icon-btn" onClick={() => imageInputRef.current?.click()}></i>
-              <i className="bi bi-paperclip pf-icon-btn" onClick={() => docInputRef.current?.click()}></i>
+              <i className="bi bi-image pf-icon-btn" onClick={() => imageInputRef.current?.click()} title="Subir imagen"></i>
+              <i className="bi bi-paperclip pf-icon-btn" onClick={() => docInputRef.current?.click()} title="Adjuntar documento"></i>
+              <i 
+                className="bi bi-link-45deg pf-icon-btn" 
+                onClick={() => setShowLinkInput(!showLinkInput)} 
+                title="Adjuntar URL (GitHub/Portfolio)"
+                style={{ color: showLinkInput ? '#000' : '' }}
+              ></i>
            </div>
 
            <div className="pf-controls">

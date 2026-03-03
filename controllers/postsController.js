@@ -11,10 +11,9 @@ const getSafeId = (entity) => {
   return entity?._id ? entity._id.toString() : entity?.toString();
 };
 
-
 export const flagPost = async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const userId = req.user._id;
 
     // Actualizamos el post a flagged: true
@@ -28,14 +27,11 @@ export const flagPost = async (req, res) => {
 
     // --- SOCKET.IO: Notificar a todos que este post fue ocultado/reportado ---
     const { emitToAll, emitToPost } = await import("../src/utils/realtime.js");
-    
-    // Emitimos 'post:deleted' o un evento específico 'post:flagged'
-    // Usamos 'post:deleted' para aprovechar la lógica que ya tienes de eliminar del feed
-    // O puedes crear 'post:flagged' si quieres manejarlo distinto.
+
     const payload = { postId: id };
-    
+
     // Esto hará que desaparezca del feed de otros usuarios en tiempo real
-    emitToAll("post:deleted", payload); 
+    emitToAll("post:deleted", payload);
     emitToPost(id, "post:deleted", payload);
 
     res.json({ message: "Publicación reportada y enviada a revisión.", post });
@@ -46,7 +42,7 @@ export const flagPost = async (req, res) => {
 };
 
 export const acceptCollaborationAndChat = async (req, res) => {
-  const { id, userId } = req.params; 
+  const { id, userId } = req.params;
   const session = await mongoose.startSession();
 
   try {
@@ -106,7 +102,7 @@ export const acceptCollaborationAndChat = async (req, res) => {
           [
             {
               conversation: conversation._id,
-              sender: req.user._id, 
+              sender: req.user._id,
               content: `¡Te doy la bienvenida al equipo de "${post.title}"!`,
               readBy: [req.user._id],
               context: {
@@ -123,7 +119,7 @@ export const acceptCollaborationAndChat = async (req, res) => {
         conversation.lastMessage = systemMessage[0].content;
         conversation.lastSender = req.user._id;
         conversation.lastMessageAt = new Date();
-        
+
         const newUnread = conversation.unreadBy.map((id) => id.toString());
         if (!newUnread.includes(userId.toString())) {
           conversation.unreadBy.push(userId);
@@ -136,6 +132,15 @@ export const acceptCollaborationAndChat = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // 👇 AQUÍ VA EL FIX (Dentro del TRY, después de cerrar la sesión y guardar todo)
+    try {
+      const { emitToAll } = await import("../src/utils/realtime.js");
+      if (emitToAll) emitToAll("collab:updated", { postId: post._id });
+    } catch (err) {
+      console.error("Error emitiendo collab:updated:", err);
+    }
+
+    // Respuesta de éxito
     res.json({
       ok: true,
       conversationId: conversation._id,
@@ -144,7 +149,9 @@ export const acceptCollaborationAndChat = async (req, res) => {
         ? "Match confirmado y chat abierto"
         : "Ya estaba aceptado, abriendo chat",
     });
+
   } catch (error) {
+    
     await session.abortTransaction();
     session.endSession();
     console.error("Error Transaction:", error);
@@ -224,14 +231,13 @@ export const createPost = async (req, res) => {
 
     await newPost.save();
 
-    // 👇 AQUÍ ESTÁ LA CORRECCIÓN: Agregamos "color" al select de degrees
     const populatedPost = await Post.findById(newPost._id)
       .populate({
         path: "author",
         select: "username firstName lastName profilePicture degrees",
-        populate: { path: "degrees", select: "name slug color" }, // <--- "color" AGREGADO
+        populate: { path: "degrees", select: "name slug color" },
       })
-      .populate("degree", "name slug color"); // <--- "color" AGREGADO
+      .populate("degree", "name slug color");
 
     try {
       const { emitToAll } = await import("../src/utils/realtime.js");
@@ -243,10 +249,11 @@ export const createPost = async (req, res) => {
     return res.status(201).json(populatedPost);
   } catch (err) {
     console.error("Error createPost:", err);
-    return res.status(500).json({ message: "Error al crear post" });
+    // Si el error viene de nuestro filtro de groserías, mandamos ese mensaje
+    const errorMessage = err.message || "Error al crear post";
+    return res.status(500).json({ message: errorMessage });
   }
 };
-
 
 export const getAllPosts = async (req, res) => {
   try {
@@ -255,65 +262,85 @@ export const getAllPosts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const posts = await Post.aggregate([
-      // 1. Join con Autor
-
-      { 
-        $match: { 
-          flagged: { $ne: true } 
-        } 
+      // 1. Filtramos posts no reportados
+      {
+        $match: {
+          flagged: { $ne: true },
+        },
       },
 
+      // 2. Join con Autor
       {
         $lookup: {
           from: "users",
           localField: "author",
           foreignField: "_id",
-          as: "author"
-        }
+          as: "author",
+        },
       },
-      { $unwind: "$author" }, 
+      { $unwind: "$author" },
 
-      // 2. Join con Degrees del Autor (para su perfil)
+      // 3. Join con Degrees del Autor
       {
         $lookup: {
           from: "degrees",
           localField: "author.degrees",
           foreignField: "_id",
-          as: "author.degrees"
-        }
+          as: "author.degrees",
+        },
       },
 
-      // 👇 3. NUEVO: Join con la Carrera del POST (Para saber el color del post)
+      // 4. Join con la Carrera del POST
       {
         $lookup: {
           from: "degrees",
           localField: "degree",
           foreignField: "_id",
-          as: "postDegree"
-        }
+          as: "postDegree",
+        },
       },
-      { 
-        $unwind: { path: "$postDegree", preserveNullAndEmptyArrays: true } 
+      {
+        $unwind: { path: "$postDegree", preserveNullAndEmptyArrays: true },
       },
 
-      // 4. Proyección Final
+      // 👇 5. Buscamos los comentarios reales (Omitimos flagged y lápidas/isDeleted)
+      {
+        $lookup: {
+          from: "comments",
+          let: { postId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$post", "$$postId"] },
+                flagged: { $ne: true }, 
+                isDeleted: { $ne: true }, // <--- FIX APLICADO
+              },
+            },
+          ],
+          as: "realComments",
+        },
+      },
+
+      // 6. Proyección Final
       {
         $project: {
           _id: 1,
           title: 1,
           content: 1,
-          category: 1, 
+          category: 1,
           createdAt: 1,
           updatedAt: 1,
           likedBy: 1,
-          commentsCount: { $size: { $ifNull: ["$comments", []] } }, 
-          
-          // Datos del Post Degree (con color)
+          images: 1,
+          documents: 1,
+          links: 1,
+          commentsCount: { $size: "$realComments" },
+
           degree: {
             _id: "$postDegree._id",
             name: "$postDegree.name",
             slug: "$postDegree.slug",
-            color: "$postDegree.color" // 👈 ESTO ES LO QUE NECESITABAS
+            color: "$postDegree.color",
           },
 
           author: {
@@ -322,18 +349,18 @@ export const getAllPosts = async (req, res) => {
             lastName: 1,
             username: 1,
             profilePicture: 1,
-            degrees: { 
+            degrees: {
               _id: 1,
-              name: 1, 
-              color: 1 
-            }
-          }
-        }
+              name: 1,
+              color: 1,
+            },
+          },
+        },
       },
 
       { $sort: { createdAt: -1 } },
       { $skip: skip },
-      { $limit: limit }
+      { $limit: limit },
     ]);
 
     res.json(posts);
@@ -347,14 +374,26 @@ export const getPostsByUser = async (req, res) => {
   try {
     const posts = await Post.find({ author: req.user._id })
       .populate("author", "username profilePicture")
-      .populate("degree", "name color") // <--- "color" AGREGADO
+      .populate("degree", "name color")
       .populate(
         "selectedCollaborators",
         "username firstName lastName profilePicture",
       )
       .sort({ createdAt: -1 });
 
-    res.json(posts);
+    const Comment = mongoose.model("Comment");
+    const postsWithCounts = await Promise.all(
+      posts.map(async (p) => {
+        const count = await Comment.countDocuments({
+          post: p._id,
+          flagged: { $ne: true },
+          isDeleted: { $ne: true }, // <--- FIX APLICADO
+        });
+        return { ...p.toObject(), commentsCount: count };
+      }),
+    );
+
+    res.json(postsWithCounts);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -363,14 +402,13 @@ export const getPostsByUser = async (req, res) => {
 export const getPostById = async (req, res) => {
   const id = req.params.id || req.params.postId;
   try {
-    // 👇 CORRECCIÓN: Agregar "color" en los populates
     const post = await Post.findById(id)
       .populate({
         path: "author",
         select: "username firstName lastName profilePicture degrees",
-        populate: { path: "degrees", select: "name slug color" }, // <--- AQUI
+        populate: { path: "degrees", select: "name slug color" },
       })
-      .populate("degree", "name slug color") // <--- AQUI
+      .populate("degree", "name slug color")
       .populate(
         "interestedUsers.user",
         "username firstName lastName profilePicture",
@@ -381,10 +419,21 @@ export const getPostById = async (req, res) => {
       );
 
     if (!post) return res.status(404).json({ message: "Post no encontrado" });
-    res.json(post);
+
+    const Comment = mongoose.model("Comment");
+    const count = await Comment.countDocuments({
+      post: post._id,
+      flagged: { $ne: true },
+      isDeleted: { $ne: true }, // <--- FIX APLICADO
+    });
+
+    const postObj = post.toObject();
+    postObj.commentsCount = count; 
+
+    res.json(postObj);
   } catch (error) {
-    if (error.kind === 'ObjectId') {
-        return res.status(404).json({ message: "Post no encontrado" });
+    if (error.kind === "ObjectId") {
+      return res.status(404).json({ message: "Post no encontrado" });
     }
     res.status(500).json({ message: error.message });
   }
@@ -417,7 +466,7 @@ export const updatePost = async (req, res) => {
         updates[field] = req.body[field];
       }
     }
-    
+
     if (typeof req.body.links === "string") {
       try {
         updates.links = JSON.parse(req.body.links);
@@ -436,10 +485,10 @@ export const updatePost = async (req, res) => {
     })
       .populate({
         path: "author",
-        select: "username firstName lastName profilePicture degrees", 
-        populate: { path: "degrees", select: "name slug color" }
+        select: "username firstName lastName profilePicture degrees",
+        populate: { path: "degrees", select: "name slug color" },
       })
-      .populate("degree", "name slug color") 
+      .populate("degree", "name slug color")
       .populate("interestedUsers.user", "username profilePicture");
     const { emitToAll, emitToPost } = await import("../src/utils/realtime.js");
     const payload = {
@@ -544,7 +593,9 @@ export const toggleInterest = async (req, res) => {
             await author.save();
 
             const { emitToUser } = await import("../src/utils/realtime.js");
-            const unreadCount = author.notifications.filter((n) => !n.read).length;
+            const unreadCount = author.notifications.filter(
+              (n) => !n.read,
+            ).length;
             emitToUser(author._id, "notification", notif);
             emitToUser(author._id, "notifications:count", { unreadCount });
           }
@@ -552,12 +603,16 @@ export const toggleInterest = async (req, res) => {
       }
     }
 
+    
     const populatedPost = await Post.findById(postId)
       .populate("author", "username profilePicture")
       .populate("interestedUsers.user", "username profilePicture");
 
-    const { emitToPost } = await import("../src/utils/realtime.js");
+    const { emitToPost, emitToAll } = await import("../src/utils/realtime.js");
+    
+    // Emitimos las actualizaciones al frontend
     emitToPost(postId, "post:updated", { postId, post: populatedPost });
+    if (emitToAll) emitToAll("collab:updated", { postId }); 
 
     const myInterest = isInterested
       ? populatedPost.interestedUsers.find(
@@ -578,7 +633,7 @@ export const toggleInterest = async (req, res) => {
 
 export const manageCollabRequest = async (req, res) => {
   const { id, userId } = req.params;
-  const { status } = req.body; 
+  const { status } = req.body;
   const currentUserId = req.user._id;
 
   try {
@@ -604,13 +659,17 @@ export const manageCollabRequest = async (req, res) => {
       .populate("author", "username profilePicture")
       .populate("interestedUsers.user", "username profilePicture");
 
-    const { emitToPost, emitToUser } = await import("../src/utils/realtime.js");
+    // 👇 FIX APLICADO: Importamos emitToAll y disparamos el evento global
+    const { emitToPost, emitToUser, emitToAll } = await import("../src/utils/realtime.js");
+    
     emitToPost(id, "post:updated", { postId: id, post: updatedPost });
+    if (emitToAll) emitToAll("collab:updated", { postId: id }); // Activa el refresh en React
 
+    // 👇 FIX APLICADO: Cambiamos "rechazada" por "declinada"
     const notifMsg =
       status === "accepted"
         ? `¡Felicidades! Fuiste aceptado en "${post.title}".`
-        : `Tu solicitud para "${post.title}" fue rechazada.`;
+        : `Tu solicitud para "${post.title}" fue declinada.`;
 
     emitToUser(userId, "notification", {
       type: "collab_status",
@@ -681,18 +740,25 @@ export const toggleLike = async (req, res) => {
     const post = await Post.findById(id);
     if (!post) return res.status(404).json({ message: "Post no encontrado" });
 
-    if (!Array.isArray(post.likedBy)) post.likedBy = [];
+    const hasLiked =
+      post.likedBy &&
+      post.likedBy.some((uid) => uid.toString() === userId.toString());
 
-    const hasLiked = post.likedBy.some(
-      (uid) => uid.toString() === userId.toString(),
-    );
+    let updatedPost;
 
     if (hasLiked) {
-      post.likedBy = post.likedBy.filter(
-        (uid) => uid.toString() !== userId.toString(),
+      updatedPost = await Post.findByIdAndUpdate(
+        id,
+        { $pull: { likedBy: userId } },
+        { new: true }, 
       );
     } else {
-      post.likedBy.push(userId);
+      updatedPost = await Post.findByIdAndUpdate(
+        id,
+        { $addToSet: { likedBy: userId } },
+        { new: true },
+      );
+
       const postAuthorId = getSafeId(post.author);
       if (postAuthorId !== userId.toString()) {
         const User = mongoose.model("User");
@@ -723,21 +789,22 @@ export const toggleLike = async (req, res) => {
       }
     }
 
-    await post.save();
+    const { emitToUser, emitToPost, emitToAll } =
+      await import("../src/utils/realtime.js");
 
-    const { emitToUser, emitToPost } = await import("../src/utils/realtime.js");
     const likePayload = {
-      postId: post._id.toString(),
-      likesCount: post.likedBy.length,
+      postId: updatedPost._id.toString(),
+      likesCount: updatedPost.likedBy.length,
       actorId: userId.toString(),
     };
 
-    emitToUser(post.author, "post:like", likePayload);
-    emitToPost(post._id, "post:like", likePayload);
+    emitToUser(updatedPost.author, "post:like", likePayload);
+    emitToPost(updatedPost._id, "post:like", likePayload);
+    if (emitToAll) emitToAll("post:like", likePayload); 
 
     return res.json({
       liked: !hasLiked,
-      likesCount: post.likedBy.length,
+      likesCount: updatedPost.likedBy.length,
     });
   } catch (error) {
     console.error("Error en toggleLike:", error);
@@ -840,9 +907,8 @@ export const getPostsByDegree = async (req, res) => {
     const degree = await Degree.findOne({ slug })
       .select("_id name slug")
       .lean();
-    if (!degree) {
+    if (!degree)
       return res.status(404).json({ message: "Carrera no encontrada" });
-    }
 
     const match = { degree: degree._id };
     if (category) match.category = category;
@@ -854,23 +920,34 @@ export const getPostsByDegree = async (req, res) => {
     const posts = await Post.find(match)
       .sort({ createdAt: -1 })
       .limit(Number(limit))
-      // 👇 CORRECCIÓN: Agregar color al populate
       .populate({
         path: "author",
         select: "username firstName lastName profilePicture degrees",
-        populate: { path: "degrees", select: "name slug color" }, // <--- AQUI
+        populate: { path: "degrees", select: "name slug color" },
       })
-      .populate("degree", "name slug color") // <--- Y AQUI
+      .populate("degree", "name slug color")
       .populate(
         "selectedCollaborators",
         "username firstName lastName profilePicture",
       );
 
-    const nextCursor = posts.length
-      ? posts[posts.length - 1].createdAt.toISOString()
+    const Comment = mongoose.model("Comment");
+    const postsWithCounts = await Promise.all(
+      posts.map(async (p) => {
+        const count = await Comment.countDocuments({
+          post: p._id,
+          flagged: { $ne: true },
+          isDeleted: { $ne: true }, // <--- FIX APLICADO
+        });
+        return { ...p.toObject(), commentsCount: count };
+      }),
+    );
+
+    const nextCursor = postsWithCounts.length
+      ? postsWithCounts[postsWithCounts.length - 1].createdAt.toISOString()
       : null;
 
-    return res.json({ degree, items: posts, nextCursor });
+    return res.json({ degree, items: postsWithCounts, nextCursor });
   } catch (error) {
     console.error(error);
     return res
@@ -879,45 +956,39 @@ export const getPostsByDegree = async (req, res) => {
   }
 };
 
-// ... Resto de los controladores (getReceivedRequests, etc.) siguen igual ...
-// (Para ahorrar espacio, mantén el resto del código que ya estaba bien)
-// Solamente necesitabas agregar "color" en los .populate() de arriba.
 export const getReceivedRequests = async (req, res) => {
   const userId = new mongoose.Types.ObjectId(req.user._id);
 
   try {
     const requests = await Post.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           author: userId,
-          "interestedUsers.0": { $exists: true } 
-        } 
+          "interestedUsers.0": { $exists: true },
+        },
       },
       { $unwind: "$interestedUsers" },
       { $match: { "interestedUsers.status": "pending" } },
-      
-      // Lookup Usuario
+
       {
         $lookup: {
           from: "users",
           localField: "interestedUsers.user",
           foreignField: "_id",
-          as: "applicant"
-        }
+          as: "applicant",
+        },
       },
       { $unwind: "$applicant" },
 
-      // --- NUEVO: Lookup Carreras del Solicitante ---
       {
         $lookup: {
           from: "degrees",
-          localField: "applicant.degrees", // Array de IDs en el usuario
+          localField: "applicant.degrees", 
           foreignField: "_id",
-          as: "applicantDegrees" // Array de objetos carrera
-        }
+          as: "applicantDegrees", 
+        },
       },
 
-      // Agrupar
       {
         $group: {
           _id: "$applicant._id",
@@ -928,22 +999,21 @@ export const getReceivedRequests = async (req, res) => {
               firstName: "$applicant.firstName",
               lastName: "$applicant.lastName",
               profilePicture: "$applicant.profilePicture",
-              // Guardamos las carreras populadas
-              degrees: "$applicantDegrees" 
-            }
+              degrees: "$applicantDegrees",
+            },
           },
           projects: {
             $push: {
               _id: "$_id",
               title: "$title",
               category: "$category",
-              requestedAt: "$interestedUsers.date"
-            }
+              requestedAt: "$interestedUsers.date",
+            },
           },
-          totalRequests: { $sum: 1 }
-        }
+          totalRequests: { $sum: 1 },
+        },
       },
-      { $sort: { totalRequests: -1 } }
+      { $sort: { totalRequests: -1 } },
     ]);
 
     res.json(requests);
@@ -961,14 +1031,14 @@ export const getSentRequests = async (req, res) => {
       { $match: { "interestedUsers.user": userId } },
       { $unwind: "$interestedUsers" },
       { $match: { "interestedUsers.user": userId } },
-      
+
       {
         $lookup: {
           from: "users",
           localField: "author",
           foreignField: "_id",
-          as: "owner"
-        }
+          as: "owner",
+        },
       },
       { $unwind: "$owner" },
 
@@ -977,10 +1047,10 @@ export const getSentRequests = async (req, res) => {
           from: "degrees",
           localField: "owner.degrees",
           foreignField: "_id",
-          as: "ownerDegrees"
-        }
+          as: "ownerDegrees",
+        },
       },
-      
+
       {
         $project: {
           _id: 1,
@@ -994,11 +1064,11 @@ export const getSentRequests = async (req, res) => {
             firstName: "$owner.firstName",
             lastName: "$owner.lastName",
             profilePicture: "$owner.profilePicture",
-            degrees: "$ownerDegrees"
-          }
-        }
+            degrees: "$ownerDegrees",
+          },
+        },
       },
-      { $sort: { date: -1 } }
+      { $sort: { date: -1 } },
     ]);
 
     res.json(requests);
@@ -1020,7 +1090,9 @@ export const closeTeam = async (req, res) => {
     }
 
     if (post.author.toString() !== userId.toString()) {
-      return res.status(403).json({ message: "No tienes permiso para cerrar este equipo" });
+      return res
+        .status(403)
+        .json({ message: "No tienes permiso para cerrar este equipo" });
     }
 
     post.collabStatus = "team_chosen";
@@ -1035,12 +1107,20 @@ export const closeTeam = async (req, res) => {
 
     await post.save();
 
-    res.json({ 
-      message: "Equipo cerrado exitosamente", 
-      post,
-      rejectedCount 
-    });
+    // 👇 FIX APLICADO: Avisamos a toda la app que este equipo se cerró
+    try {
+      const { emitToAll, emitToPost } = await import("../src/utils/realtime.js");
+      if (emitToAll) emitToAll("collab:updated", { postId });
+      if (emitToPost) emitToPost(postId, "post:updated", { postId, post });
+    } catch (err) {
+      console.error("Error emitiendo cierre de equipo:", err);
+    }
 
+    res.json({
+      message: "Equipo cerrado exitosamente",
+      post,
+      rejectedCount,
+    });
   } catch (error) {
     console.error("Error al cerrar equipo:", error);
     res.status(500).json({ message: "Error del servidor al cerrar equipo" });
@@ -1052,13 +1132,16 @@ export const getMyOpenCollabs = async (req, res) => {
     const userId = req.user._id;
     const posts = await Post.find({
       author: userId,
-      category: 'colaboradores',
-      collabStatus: 'open'
+      category: "colaboradores",
+      collabStatus: "open",
     })
-    .select('title category collabStatus interestedUsers createdAt degree') 
-    .sort({ createdAt: -1 })
-    .populate('degree', 'name color') // <--- Agregado color también aquí
-    .populate('interestedUsers.user', 'username firstName lastName profilePicture'); 
+      .select("title category collabStatus interestedUsers createdAt degree")
+      .sort({ createdAt: -1 })
+      .populate("degree", "name color")
+      .populate(
+        "interestedUsers.user",
+        "username firstName lastName profilePicture",
+      );
 
     res.json(posts);
   } catch (error) {

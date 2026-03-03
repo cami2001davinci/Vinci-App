@@ -1,13 +1,13 @@
 ﻿import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "../api/axiosInstance";
-import { CommentCountStore } from "../store/commentCountStore.js"; 
 import CommentForm from "./CommentForm";
 import CommentsList from "./CommentsList";
 import PostContent from "./PostContent";
 import CollabActions from "./CollabActions";
 import UserAvatar from "./UserAvatar"; 
-import { useConfirm } from "../context/ConfirmContext"; // ✅ Estilos recuperados
+import { useConfirm } from "../context/ConfirmContext";
+import { useNavigate } from "react-router-dom"; 
 
 import "../styles/PostCard.css";
 
@@ -29,93 +29,36 @@ function timeAgo(date) {
 export default function PostCardView({ post, onPostChanged }) {
   const { user } = useAuth();
   const confirm = useConfirm(); 
+  const navigate = useNavigate();
+  
   const [postData, setPostData] = useState(post);
-  const [likes, setLikes] = useState(post?.likedBy?.length || 0);
+
+  
+  
+  
+  const [likes, setLikes] = useState(post?.likedBy?.length || post?.likesCount || 0);
+  const [commentsCount, setCommentsCount] = useState(
+    post?.commentsCount !== undefined ? post.commentsCount : (Array.isArray(post?.comments) ? post.comments.length : 0)
+  );
+
   const [showComments, setShowComments] = useState(false);
   const [commentsVersion, setCommentsVersion] = useState(0);
-  
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [isReported, setIsReported] = useState(false);
 
   const [formValues, setFormValues] = useState({
+    title: post?.title || "",
     content: post?.content || "",
     category: post?.category || "comunidad",
   });
 
-  const [commentsCount, setCommentsCount] = useState(0);
   const postId = postData?._id || post?._id;
 
-  useEffect(() => { setPostData(post); }, [post]);
-
-  // 1. SUSCRIPCIÓN AL STORE (Solo lectura del valor numérico)
-  useEffect(() => {
-    if (!postId) return;
-    const storeCount = CommentCountStore.getCount(postId);
-    const initialCount = storeCount > 0 
-      ? storeCount 
-      : (Array.isArray(postData?.comments) ? postData.comments.length : (postData?.commentsCount || 0));
-    
-    setCommentsCount(initialCount);
-    // Inicializamos el store si está vacío
-    if (storeCount === 0 && initialCount > 0) {
-       CommentCountStore.setCount(postId, initialCount);
-    }
-    return CommentCountStore.subscribe(postId, (newVal) => setCommentsCount(newVal));
-  }, [postId, postData]);
-
-  // 2. ESCUCHA DE EVENTOS GLOBALES (Lógica de conteo)
-  // Usamos los eventos de window que despacha socket.js
-  useEffect(() => {
-    if (!postId) return;
-
-    // A. Nuevo Comentario
-    const handleRemoteCreate = (e) => {
-        const { postId: pId, newComment } = e.detail || {};
-        
-        // Verificar que sea de este post
-        if (pId !== postId && newComment?.post !== postId) return;
-        
-        // 👇 LÓGICA ROBUSTA PARA EVITAR DOBLE CONTEO
-        const myId = user?._id ? user._id.toString() : null;
-        let authorId = null;
-
-        if (newComment?.author) {
-            // El author puede venir como objeto {_id: '...'} o como string '...'
-            authorId = newComment.author._id 
-                ? newComment.author._id.toString() 
-                : newComment.author.toString();
-        }
-
-        // Si el autor soy yo, IGNORO este evento (ya sumé manualmente en onNewComment)
-        if (myId && authorId === myId) return;
-
-        // Si es otro usuario, incremento
-        CommentCountStore.increment(postId);
-    };
-
-    // B. Eliminación de Comentario
-    const handleRemoteDelete = (e) => {
-        const { postId: pId } = e.detail || {};
-        if (pId === postId) {
-            CommentCountStore.decrement(postId);
-        }
-    };
-
-    window.addEventListener("vinci:post-comment", handleRemoteCreate);
-    window.addEventListener("vinci:comment-delete", handleRemoteDelete);
-
-    return () => {
-        window.removeEventListener("vinci:post-comment", handleRemoteCreate);
-        window.removeEventListener("vinci:comment-delete", handleRemoteDelete);
-    };
-  }, [postId, user]);
-
+  
   const author = postData?.author || {};
-  const displayName = (author.firstName && author.lastName) 
-    ? `${author.firstName} ${author.lastName}` 
-    : author.username || "Usuario";
+  const displayName = (author.firstName && author.lastName) ? `${author.firstName} ${author.lastName}` : author.username || "Usuario";
   const displayUsername = author.username ? `@${author.username}` : "";
   const isAuthor = user?._id === author._id;
 
@@ -123,6 +66,91 @@ export default function PostCardView({ post, onPostChanged }) {
   const forumColor = postDegree.color || '#000000'; 
   const headerBarStyle = { backgroundColor: forumColor };
   const authorDegrees = Array.isArray(author.degrees) ? author.degrees : [];
+
+  // 1. SINCRONIZACIÓN DESDE EL PADRE (Feed)
+  useEffect(() => { 
+    setPostData(post); 
+    if (post?.likedBy !== undefined) setLikes(post.likedBy.length);
+    else if (post?.likesCount !== undefined) setLikes(post.likesCount);
+
+    if (post?.commentsCount !== undefined) {
+      setCommentsCount(post.commentsCount);
+    } else if (Array.isArray(post?.comments)) {
+      setCommentsCount(post.comments.length);
+    }
+  }, [post]);
+
+  // 2. ESCUCHA DE EVENTOS Y SOCKETS
+  useEffect(() => {
+    if (!postId) return;
+
+    // A. Comentario Nuevo de OTRO usuario
+    const handleRemoteCreate = (e) => {
+        const { postId: pId, newComment } = e.detail || {};
+        if (pId?.toString() !== postId?.toString() && newComment?.post?.toString() !== postId?.toString()) return;
+
+        const myId = user?._id?.toString();
+        let authorId = null;
+        if (newComment?.author?._id) authorId = newComment.author._id.toString();
+        else if (newComment?.author) authorId = newComment.author.toString();
+
+        if (myId && authorId === myId) return; 
+        setCommentsCount(prev => prev + 1);
+    };
+
+    // B. Comentario Nuevo MÍO
+    const handleLocalIncrement = (e) => {
+        if (e.detail?.postId?.toString() === postId?.toString()) {
+            setCommentsCount(prev => prev + 1);
+        }
+    };
+
+    // C. Eliminación (Soporta Soft y Hard Delete)
+    const handleRemoteDelete = (e) => {
+        const payload = e.detail || {};
+        const { postId: pId, commentsCount: newCount } = payload;
+
+        if (pId?.toString() === postId?.toString()) {
+            if (newCount !== undefined) {
+                setCommentsCount(newCount); // Usamos la cuenta exacta del servidor
+            } else {
+                setCommentsCount(prev => Math.max(0, prev - 1));
+            }
+        }
+    };
+
+    // D. Likes
+    const handleRemoteLike = (e) => {
+        const payload = e.detail || {};
+        const pId = payload.postId || payload.post?._id || payload.post;
+        
+        if (pId?.toString() === postId?.toString() && payload.likesCount !== undefined) {
+            setLikes(payload.likesCount);
+        }
+    };
+
+    // E. CORRECCIÓN DEL CONTADOR AL ABRIR COMENTARIOS
+    const handleSyncCount = (e) => {
+        const { postId: pId, count } = e.detail || {};
+        if (pId?.toString() === postId?.toString() && count !== undefined) {
+            setCommentsCount(count); 
+        }
+    };
+
+    window.addEventListener("vinci:post-comment", handleRemoteCreate);
+    window.addEventListener("vinci:local-increment", handleLocalIncrement);
+    window.addEventListener("vinci:comment-delete", handleRemoteDelete);
+    window.addEventListener("vinci:post-like", handleRemoteLike);
+    window.addEventListener("vinci:sync-comments-count", handleSyncCount);
+
+    return () => {
+        window.removeEventListener("vinci:post-comment", handleRemoteCreate);
+        window.removeEventListener("vinci:local-increment", handleLocalIncrement);
+        window.removeEventListener("vinci:comment-delete", handleRemoteDelete);
+        window.removeEventListener("vinci:post-like", handleRemoteLike);
+        window.removeEventListener("vinci:sync-comments-count", handleSyncCount);
+    };
+  }, [postId, user]);
 
   const toggleLike = async () => {
     if (!postId) return;
@@ -133,14 +161,12 @@ export default function PostCardView({ post, onPostChanged }) {
   };
 
   const handleDelete = async () => {
-    // ✅ Estilos: Usamos el confirm personalizado
     const isConfirmed = await confirm({
       title: "Eliminar Posteo",
-      message: "¿Estás seguro de que quieres eliminar esta publicación permanentemente?",
+      message: "¿Seguro que quieres eliminar esta publicación permanentemente?",
       confirmText: "Sí, eliminar",
       variant: "danger"
     });
-
     if (!isConfirmed) return;
 
     try {
@@ -150,26 +176,19 @@ export default function PostCardView({ post, onPostChanged }) {
   };
   
   const handleReport = async () => {
-     // ✅ Estilos: Usamos el confirm personalizado
      const isConfirmed = await confirm({
         title: "Reportar Contenido",
-        message: "Si crees que esto incumple las normas, repórtalo. Desaparecerá de tu vista.",
+        message: "Si crees que esto incumple las normas, repórtalo.",
         confirmText: "Reportar",
         variant: "default"
      });
-     
      if (!isConfirmed) return;
 
      setIsReported(true);
      setShowActions(false);
-
      try {
-       // Llamada a la API (ruta estándar)
        await axios.put(`/posts/${postId}/flag`);
-     } catch (err) {
-       console.error("Error al reportar:", err);
-       // Opcional: Revertir si falla
-     }
+     } catch (err) { console.error(err); }
   };
 
   const handleEditSubmit = async (e) => {
@@ -189,7 +208,7 @@ export default function PostCardView({ post, onPostChanged }) {
         <div className="d-flex flex-column align-items-center gap-2">
             <i className="bi bi-shield-check fs-1 text-muted"></i>
             <h5 className="fw-bold mb-1">Publicación reportada</h5>
-            <p className="text-muted small m-0">Gracias por informarnos. No volverás a ver esta publicación mientras la revisamos.</p>
+            <p className="text-muted small m-0">Gracias por informarnos.</p>
             <button className="btn btn-link text-dark fw-bold btn-sm mt-2" onClick={() => onPostChanged?.("delete", postId)}>Cerrar</button>
         </div>
       </article>
@@ -200,7 +219,14 @@ export default function PostCardView({ post, onPostChanged }) {
     <article className="neo-post-card" style={{overflow: 'visible'}}>
       <div className="neo-post-card__color-bar" style={headerBarStyle}></div>
       <div className="neo-post-card__header">
-        <div className="neo-post-card__author-info">
+        
+        {/* IZQUIERDA: Avatar + Info */}
+        <div 
+          className="neo-post-card__author-info"
+          onClick={() => author?._id && navigate(`/profile/${author._id}`)}
+          style={{ cursor: 'pointer' }}
+          title="Ver perfil del autor"
+        >
           <UserAvatar user={author} className="neo-post-card__avatar" />
           <div className="neo-post-card__names">
             <div className="neo-post-card__identity-row">
@@ -219,6 +245,7 @@ export default function PostCardView({ post, onPostChanged }) {
             </div>
           </div>
         </div>
+
         <div className="d-flex align-items-center gap-2">
             <div className="neo-date-pill">HACE {timeAgo(postData.createdAt)}</div>
             <div className="position-relative">
@@ -253,6 +280,12 @@ export default function PostCardView({ post, onPostChanged }) {
           </form>
         ) : (
           <>
+          {/* Título renderizado limpio, usando la nueva clase CSS */}
+            {postData.category === 'colaboradores' && postData.title && postData.title !== 'Publicación' && (
+              <h3 className="neo-post-card__project-title mb-3">
+                {postData.title}
+              </h3>
+            )}
             <PostContent post={postData} actionsSlot={null} accentColor={forumColor} />
             {postData.category === 'colaboradores' && (
               <div className="mt-3"><CollabActions post={postData} onPostUpdate={setPostData} /></div>
@@ -274,12 +307,11 @@ export default function PostCardView({ post, onPostChanged }) {
 
       {showComments && postId && (
         <div className="bg-light p-3 border-top border-2 border-dark">
-          {/* Cuando comentas, esto suma 1.*/}
           <CommentForm 
             postId={postId} 
             onNewComment={() => {
                 setCommentsVersion(v => v + 1);
-                CommentCountStore.increment(postId); 
+                window.dispatchEvent(new CustomEvent("vinci:local-increment", { detail: { postId } })); 
             }} 
           />
           <CommentsList postId={postId} key={commentsVersion} />

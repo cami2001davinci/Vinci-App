@@ -62,11 +62,11 @@ export const AuthProvider = ({ children }) => {
     logoutTimerRef.current = setTimeout(() => logout(), msUntilExpire);
   };
 
-  const login = (token, rememberMe = false) => {
+ 
+ const login = async (token, rememberMe = false) => {
     const decoded = jwtDecode(token);
-    setUser({ ...decoded, token });
-    scheduleLogout(decoded.exp);
-
+    
+    // 1. Guardamos el token donde el usuario haya elegido
     if (rememberMe) {
       localStorage.setItem("token", token);
       sessionStorage.removeItem("token");
@@ -74,7 +74,14 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.setItem("token", token);
       localStorage.removeItem("token");
     }
+
+    // 2. Seteamos la info básica decodificada
+    setUser({ ...decoded, token });
+    scheduleLogout(decoded.exp);
     reconnectSocket(token);
+
+    // 3. Vamos a buscar la info completa (foto, nombre, etc) antes de terminar
+    await refreshUserProfile();
   };
 
   const logout = () => {

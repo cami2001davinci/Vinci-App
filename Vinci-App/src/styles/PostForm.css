@@ -14,21 +14,23 @@
 .pf-header {
   display: flex;
   align-items: center;
+  gap: 1rem; /* 👈 El 'gap' crea una separación perfecta y uniforme entre el Avatar y los nombres */
   margin-bottom: 1rem;
 }
 
+/* Reducimos el tamaño del avatar específicamente dentro del PostForm */
+.pf-header .neo-post-card__avatar,
 .pf-avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  border: 2px solid #000000;
-  object-fit: cover;
-  margin-right: 1rem;
+  width: 42px !important;  /* 👈 Más pequeño (antes era 50/52px) */
+  height: 42px !important;
+  font-size: 1.1rem !important; /* Ajustamos el tamaño de la letra por si no tiene foto */
+  border-radius: 10px !important; /* Curvatura adaptada al nuevo tamaño */
+  margin-right: 0 !important; /* Quitamos el margen viejo porque ahora usamos 'gap' */
 }
 
 .pf-username {
   margin: 0;
-  font-family: 'Degular', sans-serif;
+  font-family: 'Degular', sans-serif; 
   font-weight: 800;
   text-transform: uppercase;
   font-size: 1rem;
@@ -40,6 +42,7 @@
   font-size: 0.85rem;
   font-weight: 500;
 }
+
 
 /* Textarea limpia */
 .pf-textarea {

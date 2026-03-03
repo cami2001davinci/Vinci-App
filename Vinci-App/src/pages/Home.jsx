@@ -1,9 +1,9 @@
 ﻿import { useEffect, useState, useRef } from "react";
 import axios from "../api/axiosInstance";
-import { useAuth } from "../context/AuthContext"; // Para saber quién soy
-import { socket } from "../services/socket"; // Importamos el socket
-import MainLayout from "../components/MainLayout";
+import { useAuth } from "../context/AuthContext"; 
+import { socket } from "../services/socket"; 
 import PostCard from "../components/PostCard";
+// ❌ Borramos la importación de MainLayout
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -11,16 +11,12 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Almacén temporal para posts nuevos que llegan por socket (de otros usuarios)
   const [pendingPosts, setPendingPosts] = useState([]);
-
-  // Referencia para scroll (opcional, si quieres volver arriba al cargar nuevos)
   const topRef = useRef(null);
 
   const loadPosts = async () => {
     setLoading(true);
     try {
-      // Recuerda: el backend ya debe filtrar { flagged: { $ne: true } }
       const res = await axios.get("/posts");
       
       let safePosts = [];
@@ -47,18 +43,14 @@ export default function HomePage() {
 
   // --- LÓGICA DE SOCKETS (Tiempo Real) ---
   useEffect(() => {
-    // 1. Escuchar NUEVOS posts
     const handlePostCreated = (payload) => {
       const newPost = payload.post || payload;
       if (!newPost?._id) return;
 
-      // Si el post es MÍO, lo agrego inmediatamente
       if (user && newPost.author?._id === user._id) {
         setPosts((prev) => [newPost, ...prev]);
-        // Limpiamos de pending si existiera por error
         setPendingPosts((prev) => prev.filter(p => p._id !== newPost._id));
       } else {
-        // Si es de OTRO, lo guardo en "pendientes" y muestro el botón
         setPendingPosts((prev) => {
           if (prev.find(p => p._id === newPost._id)) return prev;
           return [newPost, ...prev];
@@ -66,7 +58,6 @@ export default function HomePage() {
       }
     };
 
-    // 2. Escuchar ACTUALIZACIONES (Edición, Likes masivos, etc.)
     const handlePostUpdated = (payload) => {
       const updatedPost = payload.post || payload;
       const pId = updatedPost._id;
@@ -74,14 +65,11 @@ export default function HomePage() {
       setPosts((prev) => prev.map((p) => (p._id === pId ? updatedPost : p)));
     };
 
-    // 3. Escuchar ELIMINACIONES (Borrado o Reporte)
     const handlePostDeleted = (payload) => {
       const { postId } = payload;
       if (!postId) return;
       
-      // Lo sacamos de la lista visible
       setPosts((prev) => prev.filter((p) => p._id !== postId));
-      // Y también de pendientes por si estaba ahí
       setPendingPosts((prev) => prev.filter((p) => p._id !== postId));
     };
 
@@ -96,15 +84,12 @@ export default function HomePage() {
     };
   }, [user]);
 
-  // Función para mezclar los posts pendientes con los actuales
   const handleShowNewPosts = () => {
     setPosts((prev) => [...pendingPosts, ...prev]);
     setPendingPosts([]);
-    // Scroll suave hacia arriba
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Manejador local para cuando PostCard avisa de cambios (delete manual)
   const handlePostChanged = (action, postId) => {
     if (action === "delete") {
       setPosts((prev) => prev.filter((p) => p._id !== postId));
@@ -114,14 +99,15 @@ export default function HomePage() {
   };
 
   return (
-    <MainLayout>
+    // 👇 Usamos un fragmento vacío en lugar de MainLayout
+    <> 
       <div ref={topRef}></div>
 
       {/* BOTÓN FLOTANTE DE NUEVOS POSTS */}
       {pendingPosts.length > 0 && (
         <div 
           className="position-fixed start-50 translate-middle-x z-3" 
-          style={{ top: '80px' }} // Ajusta según la altura de tu Navbar
+          style={{ top: '80px' }} 
         >
           <button 
             onClick={handleShowNewPosts}
@@ -135,7 +121,7 @@ export default function HomePage() {
       )}
 
       {/* FEED DE PUBLICACIONES */}
-      <div className="d-flex flex-column gap-4 mt-4">
+      <div className="d-flex flex-column gap-4">
         {loading ? (
           <div className="text-center py-5">
             <div className="spinner-border text-primary" role="status">
@@ -170,6 +156,6 @@ export default function HomePage() {
           </>
         )}
       </div>
-    </MainLayout>
+    </>
   );
 }

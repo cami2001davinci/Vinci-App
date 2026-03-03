@@ -1,11 +1,9 @@
-// src/pages/RequestsPage.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axiosInstance";
 import { useAuth } from "../context/AuthContext";
-
-// 👇 NUEVO LAYOUT
-import MainLayout from "../components/MainLayout"; 
+import { socket } from "../services/socket"; 
+import UserAvatar from "../components/UserAvatar"; 
 import "../styles/RequestsPage.css"; 
 
 export default function RequestsPage() {
@@ -18,7 +16,6 @@ export default function RequestsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
-  // Helper de tiempo
   const getTimeAgo = (dateString) => {
     if (!dateString) return "";
     const date = new Date(dateString);
@@ -34,21 +31,46 @@ export default function RequestsPage() {
   const formatDegrees = (degrees) => 
     (!Array.isArray(degrees) || degrees.length === 0) ? "Estudiante" : degrees.map(d => d.name).join(" · ");
 
+  // 1. Separamos la función para llamarla silenciosamente con los Sockets
+  const loadAllRequests = useCallback(async () => {
+    try {
+      const [resReceived, resSent, resMine] = await Promise.all([
+        axios.get("/posts/requests/received"),
+        axios.get("/posts/requests/sent"),
+        axios.get("/posts/requests/my-active"),
+      ]);
+      setReceived(resReceived.data || []);
+      setSent(resSent.data || []);
+      setMyCollabs(resMine.data || []);
+    } catch (err) { 
+      console.error(err); 
+    }
+  }, []);
+
+  // 2. Carga inicial (con pantalla de carga)
   useEffect(() => {
-    const fetchData = async () => {
+    const initLoad = async () => {
       setLoading(true);
-      try {
-        const [resReceived, resSent, resMine] = await Promise.all([
-          axios.get("/posts/requests/received"),
-          axios.get("/posts/requests/sent"),
-          axios.get("/posts/requests/my-active"),
-        ]);
-        setReceived(resReceived.data || []);
-        setSent(resSent.data || []);
-        setMyCollabs(resMine.data || []);
-      } catch (err) { console.error(err); } finally { setLoading(false); }
+      await loadAllRequests();
+      setLoading(false);
     };
-    fetchData();
+    initLoad();
+  }, []);
+
+  // 3. LA MAGIA EN TIEMPO REAL: Escuchamos al servidor
+  useEffect(() => {
+    const handleRealTimeUpdate = () => {
+      console.log("⚡ ¡Actualización de Colaboración detectada!");
+      loadAllRequests(); // Recargamos las listas silenciosamente
+    };
+
+    socket.on("collab:updated", handleRealTimeUpdate);
+    socket.on("post:updated", handleRealTimeUpdate);
+
+    return () => {
+      socket.off("collab:updated", handleRealTimeUpdate);
+      socket.off("post:updated", handleRealTimeUpdate);
+    };
   }, []);
 
   const handleAction = async (postId, userId, action) => {
@@ -69,7 +91,7 @@ export default function RequestsPage() {
   };
 
   const handleCloseTeam = async (post) => {
-    if (!window.confirm(`¿Cerrar convocatoria?`)) return;
+    if (!window.confirm(`¿Dar por finalizada la búsqueda de equipo?`)) return;
     try {
       await axios.put(`/posts/${post._id}/close-team`);
       setMyCollabs((prev) => prev.filter(p => p._id !== post._id));
@@ -78,22 +100,13 @@ export default function RequestsPage() {
 
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
 
-  // Componente interno reutilizable
-  const RequestCommonInfo = ({ userData, projectTitle }) => {
-    const avatarUrl = userData.profilePicture 
-      ? `${import.meta.env.VITE_SERVER_URL}${userData.profilePicture}` 
-      : null;
-
+  // Lógica común de las tarjetas
+  const RequestCommonInfo = ({ userData, projectTitle, isRejected }) => {
     return (
       <>
-        <div className="request-media">
-          {avatarUrl ? (
-            <img src={avatarUrl} className="request-avatar" alt="Avatar" />
-          ) : (
-            <div className="request-avatar d-flex align-items-center justify-content-center bg-light fw-bold fs-5">
-              {userData.username?.[0]?.toUpperCase()}
-            </div>
-          )}
+        <div className="request-media" style={{ position: 'relative', display: 'inline-block' }}>
+          <UserAvatar user={userData} className="request-avatar" />
+          {isRejected && <span className="avatar-rejected-badge">DECLINADO</span>}
         </div>
         <div className="request-info">
           <div className="request-header-line">
@@ -139,14 +152,14 @@ export default function RequestsPage() {
           const isRej = req.status === "rejected";
           const isAcc = req.status === "accepted";
           const cardClass = isRej ? "request-card card-disabled" : "request-card";
+          
           return (
-            <div key={req._id} className={cardClass} style={{ position: 'relative' }}>
-              {isRej && <div className="declined-stamp">DECLINADO</div>}
+            <div key={req._id} className={cardClass}>
               <div className="request-content">
-                <RequestCommonInfo userData={req.owner} projectTitle={req.title} />
+                <RequestCommonInfo userData={req.owner} projectTitle={req.title} isRejected={isRej} />
                 <div className="request-actions-container">
                   {isAcc ? <button className="req-btn btn-chat-green" onClick={() => navigate('/chats')}>IR AL CHAT 💬</button> 
-                  : isRej ? <div className="status-badge-closed">SAGA CERRADA</div> 
+                  : isRej ? <div className="status-badge-closed">NO SELECCIONADO</div> 
                   : <div className="project-pill pending-state">⏳ PENDIENTE</div>}
                 </div>
               </div>
@@ -157,45 +170,56 @@ export default function RequestsPage() {
     );
   };
 
-  const renderManage = () => {
+const renderManage = () => {
     if (myCollabs.length === 0) return <div className="text-center py-5 text-muted">No tienes proyectos activos.</div>;
     return (
       <div className="d-flex flex-column gap-3">
         {myCollabs.map((post) => (
           <div key={post._id} className="request-card">
              <div className="request-content">
-                <div className="request-media"><div className="manage-icon"><i className="bi bi-folder-fill"></i></div></div>
-                <div className="request-info">
+                
+                {/* 1. ICONO */}
+                <div className="request-media">
+                   <div className="manage-icon"><i className="bi bi-folder-fill"></i></div>
+                </div>
+                
+                {/* 2. INFO CENTRAL (Nueva estructura blindada) */}
+                <div className="manage-info-wrapper">
                    <h2 className="manage-title">{post.title}</h2>
                    <div className="manage-meta-row">
                       <span>CARRERA: <span style={{color: '#000'}}>{post.degree?.name || "GENERAL"}</span></span>
                       <span>•</span>
                       <span>{getTimeAgo(post.createdAt)}</span>
                    </div>
-                   <div className="manage-badge-pink">{post.interestedUsers?.length || 0} SOLICITUDES</div>
+                   <div className="manage-badge-container">
+                      <span className="manage-badge-pink">{post.interestedUsers?.length || 0} SOLICITUDES</span>
+                   </div>
                 </div>
+                
+                {/* 3. BOTONES DERECHOS */}
                 <div className="request-actions-container actions-vertical-desktop">
-                  <button className="req-btn btn-manage-close" onClick={() => handleCloseTeam(post)}>DAR POR CERRADO 🔒</button>
+                  <button className="req-btn btn-manage-close" onClick={() => handleCloseTeam(post)}>FINALIZAR BÚSQUEDA 🔒</button>
                   <button className="req-btn btn-manage-view" onClick={() => toggleExpand(post._id)}>
                     {expandedId === post._id ? "OCULTAR APLICANTES ▲" : "VER APLICANTES ▼"}
                   </button>
                 </div>
              </div>
+             
+             {/* Acordeón de Aplicantes (Lógica Intacta) */}
              {expandedId === post._id && (
                 <div className="applicants-container">
                     <h4 className="applicants-title">LISTADO DE APLICANTES</h4>
                     {post.interestedUsers && post.interestedUsers.length > 0 ? (
                         post.interestedUsers.map((applicant, index) => {
                             const userData = applicant.user || {}; 
-                            const avatarUrl = userData.profilePicture ? `${import.meta.env.VITE_SERVER_URL}${userData.profilePicture}` : null;
                             let statusClass = "pending"; let statusText = "PENDIENTE";
                             if (applicant.status === 'accepted') { statusClass = "accepted"; statusText = "ACEPTADO"; }
-                            if (applicant.status === 'rejected') { statusClass = "rejected"; statusText = "RECHAZADO"; }
+                            if (applicant.status === 'rejected') { statusClass = "rejected"; statusText = "DECLINADO"; }
                             return (
                                 <div key={index} className="applicant-card">
                                     <div className="applicant-main-info">
-                                        {avatarUrl ? <img src={avatarUrl} className="applicant-avatar-large" alt="User" /> : <div className="applicant-avatar-large d-flex align-items-center justify-content-center text-dark fw-bold fs-5">{userData.username?.[0]?.toUpperCase() || "?"}</div>}
-                                        <div>
+                                        <UserAvatar user={userData} className="applicant-avatar-large" />
+                                        <div className="applicant-text-wrapper">
                                             <div className="applicant-name-large">{userData.firstName} {userData.lastName}</div>
                                             <div className="applicant-role-large">@{userData.username}</div>
                                         </div>
@@ -214,10 +238,19 @@ export default function RequestsPage() {
   };
 
   return (
-    <MainLayout>
-      <div className="mb-4">
-        <h2 className="fw-black" style={{ fontFamily: 'Degular, sans-serif', fontSize: '2rem' }}>Centro de Solicitudes</h2>
-        <p className="text-muted">Gestiona tus colaboraciones y postulaciones.</p>
+    <>
+      {/* HEADER NEOBRUTALISTA */}
+      <div className="mb-4 mt-2 d-flex flex-column justify-content-center">
+        <div className="d-flex align-items-center">
+          <div className="requests-header-accent-line"></div>
+          <h1 className="requests-header-title text-truncate m-0">
+            SOLICITUDES
+          </h1>
+        </div>
+        
+        <p className="requests-header-subtitle text-muted fw-bold mt-2 mb-0">
+          Gestiona tus colaboraciones y postulaciones
+        </p>
       </div>
       
       <div className="card shadow-sm border-2 border-dark" style={{ borderRadius: '16px', overflow: 'hidden' }}>
@@ -225,7 +258,7 @@ export default function RequestsPage() {
             <ul className="nav nav-pills nav-fill">
               <li className="nav-item"><button className={`nav-link rounded-0 py-3 fw-bold ${activeTab === "received" ? "bg-dark text-white" : "text-dark"}`} onClick={() => setActiveTab("received")}>Recibidas {received.length > 0 && <span className="badge bg-danger ms-2">{received.length}</span>}</button></li>
               <li className="nav-item"><button className={`nav-link rounded-0 py-3 fw-bold ${activeTab === "sent" ? "bg-dark text-white" : "text-dark"}`} onClick={() => setActiveTab("sent")}>Enviadas</button></li>
-              <li className="nav-item"><button className={`nav-link rounded-0 py-3 fw-bold ${activeTab === "manage" ? "bg-dark text-white" : "text-dark"}`} onClick={() => setActiveTab("manage")}>Gestión</button></li>
+              <li className="nav-item"><button className={`nav-link rounded-0 py-3 fw-bold ${activeTab === "manage" ? "bg-dark text-white" : "text-dark"}`} onClick={() => setActiveTab("manage")}>Mis Convocatorias</button></li>
             </ul>
           </div>
           <div className="card-body bg-light p-4">
@@ -238,6 +271,6 @@ export default function RequestsPage() {
             )}
           </div>
       </div>
-    </MainLayout>
+    </>
   );
 }

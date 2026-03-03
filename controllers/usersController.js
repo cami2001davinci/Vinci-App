@@ -164,34 +164,6 @@ export const getPublicProfile = async (req, res) => {
 };
 
 
-
- 
-// export const loginUser = async (req, res) => {
-//   try {
-//     const { email, password } = req.body;
-
-//     if (!email || !password) {
-//       return res.status(400).json({ message: 'Email y contraseña son obligatorios' });
-//     }
-
-//     const user = await User.findOne({ email });
-
-//     if (user && (await bcrypt.compare(password, user.password))) {
-//       res.json({
-//   id: user._id,
-//   username: user.username,
-//   role: user.role,
-//   token: generateToken(user._id, user.role) // ← aquí también
-// });
-
-//     } else {
-//       res.status(401).json({ message: 'Email o contraseña incorrectos' });
-//     }
-//   } catch (err) {
-//     res.status(500).json({ message: 'Error en el servidor', error: err.message });
-//   }
-// }; 
-
 // Obtener todos los usuarios
 export const getAllUsers = async (req, res) => {
   try {
@@ -451,5 +423,18 @@ export const markNotificationAsRead = async (req, res) => {
 };
 
 
-
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .select("-password")
+      .populate("degrees", "name slug color");
+      
+    if (!user) return res.status(404).json({ message: "Usuario no encontrado" });
+    
+    res.json(user);
+  } catch (error) {
+    console.error("Error en getMe:", error);
+    res.status(500).json({ message: "Error al obtener perfil" });
+  }
+};
 

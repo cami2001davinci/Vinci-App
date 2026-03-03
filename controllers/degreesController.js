@@ -71,23 +71,29 @@ export const createDegree = async (req, res) => {
   }
 };
 
-// ✅ NUEVO: OVERVIEW “estilo Fandom” por carrera (slug)
+// ✅ OVERVIEW “estilo Fandom” por carrera (slug)
 export const getDegreeOverview = async (req, res) => {
   try {
     const { slug } = req.params;
 
-    // 1) Buscamos la carrera por slug
     const degree = await Degree.findOne({ slug }).lean();
     if (!degree) return res.status(404).json({ message: 'Carrera no encontrada' });
 
-    // 2) Publicaciones recientes de ESA carrera (últimos 10)
+   
     const recentPosts = await Post.find({ degree: degree._id, flagged: { $ne: true } })
       .sort({ createdAt: -1 })
       .limit(10)
-      .populate('author', 'username firstName lastName profilePicture')
-      .select('content author degree category createdAt images documents likedBy');
+      .populate({
+        path: 'author',
+        select: 'username firstName lastName profilePicture degrees',
+        populate: {
+          path: 'degrees',
+          select: 'name color'
+        }
+      })
+      .populate('degree', 'name slug color')
+      .select('content author degree category createdAt images documents links likedBy title');
 
-    // 3) Top colaboradores (versión simple): quién más posteó en 60 días
     const since = new Date();
     since.setDate(since.getDate() - 60);
 
@@ -107,7 +113,6 @@ export const getDegreeOverview = async (req, res) => {
       })
     );
 
-    // 4) Categorías activas (últimos 30 días)
     const since30 = new Date();
     since30.setDate(since30.getDate() - 30);
 
@@ -117,11 +122,12 @@ export const getDegreeOverview = async (req, res) => {
       { $sort: { count: -1 } }
     ]);
 
-    // 5) Devolvemos TODO junto (FAQ/Recursos pueden venir vacíos si aún no están en el schema)
     res.json({
       degree: {
+        _id: degree._id, 
         name: degree.name,
         slug: degree.slug,
+        color: degree.color, 
         description: degree.description || '',
         bannerImage: degree.bannerImage || '',
         faq: degree.faq || [],
@@ -137,11 +143,12 @@ export const getDegreeOverview = async (req, res) => {
   }
 };
 
+// ✅ OBTENER CARRERA SIMPLE
 export const getDegreeBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
     const degree = await Degree.findOne({ slug })
-      .select('name slug description banner icon'); // agrega los campos que tengas
+      .select('name slug description color banner icon'); // 👈 AGREGAMOS EL COLOR AQUÍ TAMBIÉN
 
     if (!degree) {
       return res.status(404).json({ message: 'Carrera no encontrada' });

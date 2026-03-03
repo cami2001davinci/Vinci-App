@@ -265,7 +265,7 @@ export default function Login() {
       });
 
       // Guardar token + actualizar contexto
-      login(res.data.token, rememberMe);
+      await login(res.data.token, rememberMe);
 
       // Redirección por rol
       if (res.data.role === "admin") {

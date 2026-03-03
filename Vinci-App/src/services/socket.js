@@ -1,11 +1,12 @@
-// src/services/socket.js
 import { io } from "socket.io-client";
-// ❌ ELIMINADO: import { CommentCountStore } ... (Esto causaba el conteo doble)
 
-export const socket = io("http://localhost:3000", {
-  transports: ["websocket"],
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
+
+export const socket = io(SERVER_URL, {
+  //  Ponemos "polling" primero. Así no choca con Vite al iniciar, y luego hace "upgrade" a websocket solo.
+  transports: ["polling", "websocket"], 
   reconnection: true,
-  reconnectionAttempts: Infinity,
+  reconnectionAttempts: 10, // Nada de Infinity. Si se cae, que intente 10 veces y descanse.
   reconnectionDelayMax: 5000,
   auth: {
     token:
@@ -89,7 +90,6 @@ socket.on("post:deleted", (payload) => {
 });
 
 socket.on("post:comment", (payload) => {
-  // Solo avisamos a la app, PostCard decidirá si suma o no.
   window.dispatchEvent(
     new CustomEvent("vinci:post-comment", { detail: payload })
   );
@@ -108,7 +108,6 @@ socket.on("comment:update", (payload) => {
 });
 
 socket.on("comment:delete", (payload) => {
-  // Solo avisamos a la app.
   window.dispatchEvent(
     new CustomEvent("vinci:comment-delete", { detail: payload })
   );

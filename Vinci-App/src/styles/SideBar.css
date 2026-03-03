@@ -1,0 +1,191 @@
+/* src/styles/SideBar.css */
+
+.neo-sidebar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Ocupa el 100% del alto de la ventana */
+  padding: 1.5rem 1.25rem;
+  box-sizing: border-box;
+}
+
+/* 1. HEADER (Logo Card) */
+.neo-sidebar-logo-card {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1.5rem; /* 👈 Aire para separar del menú */
+}
+
+
+.neo-sidebar-logo-img {
+  max-height: 180px; 
+  width: auto;
+  transition: transform 0.2s ease; /* 👈 Suaviza la animación */
+}
+
+.neo-sidebar-logo-img:hover {
+  transform: scale(1.02); /* 👈 Crece un 2% al pasar el mouse */
+}
+
+/* 2. NAV (Scroll Interno) */
+.neo-sidebar-nav {
+  flex: 1; /* Ocupa el espacio sobrante entre header y footer */
+  min-height: 0; /* MUY IMPORTANTE: Evita que el contenedor colapse el flex y fuerza el scroll */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-right: 8px; /* Espacio para que el scrollbar no pise tu diseño */
+  margin-bottom: 1.5rem;
+}
+
+/* Scrollbar Finito y Personalizado */
+.neo-sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+.neo-sidebar-nav::-webkit-scrollbar-track {
+  background: transparent; 
+}
+.neo-sidebar-nav::-webkit-scrollbar-thumb {
+  background: #ccc; 
+  border-radius: 10px;
+}
+.neo-sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: #999; 
+}
+
+/* Títulos de sección estilo UI Clean */
+.neo-sidebar-title {
+  color: #888;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 1.5px;
+  margin: 1rem 0 0.5rem 0.5rem;
+}
+
+/* 3. FOOTER (Tarjeta Perfil Oscura) */
+.neo-sidebar-footer {
+  background-color: #000;
+  color: #fff;
+  border: 2px solid #000;
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2); 
+}
+
+/* 4. ESTILOS COMPARTIDOS DEL AVATAR (Foto o Iniciales) */
+.neo-sidebar-avatar {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid #000000; /* Borde blanco para resaltar sobre el footer negro */
+  flex-shrink: 0;
+}
+
+/* 5. ESTILOS SOLO PARA INICIALES (Cuando es un DIV) */
+.neo-sidebar-avatar.neo-avatar-initials {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 800;
+  font-size: 1.4rem; /* Un poco más chico que el PostCard porque el cuadro es de 48px */
+  color: #010101;
+  text-transform: uppercase;
+  user-select: none;
+  line-height: 1;
+  padding-top: 2px;
+}
+
+/* ... (todo lo que ya tenías de logo, nav y footer) ... */
+
+/* 6. LINKS DE NAVEGACIÓN */
+.neo-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: black;
+  background-color: transparent;
+  border: 2px solid transparent;
+  font-weight: 800;
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+
+.neo-sidebar-link:hover {
+  background-color: rgba(0, 0, 0, 0.05); /* Efecto hover suave */
+  color: black;
+}
+
+/* Estado Activo (Botón presionado) */
+.neo-sidebar-link--active {
+  color: white;
+  background-color: black;
+  border: 2px solid black;
+  box-shadow: 3px 3px 0px rgba(0,0,0,0.25);
+  transform: translate(-2px, -2px);
+}
+
+.neo-sidebar-link--active:hover {
+  background-color: black;
+  color: white;
+}
+
+/* 7. PUNTITO DE CARRERA */
+.neo-sidebar-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid black;
+  flex-shrink: 0;
+}
+
+/* Cuando el link está activo, el borde del puntito se vuelve blanco */
+.neo-sidebar-link--active .neo-sidebar-dot {
+  border-color: white;
+}
+
+/* 8. TEXTOS Y ESTRUCTURA DEL PERFIL (FOOTER) */
+.neo-sidebar-user-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  overflow: hidden;
+}
+
+.neo-sidebar-user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0; /* Permite el truncamiento */
+}
+
+.neo-sidebar-user-text {
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.neo-sidebar-user-name {
+  font-weight: bold;
+  font-size: 0.95rem;
+  color: #ffffff;
+  max-width: 130px;
+}
+
+.neo-sidebar-user-handle {
+  font-size: 0.8rem;
+  color: #aaaaaa;
+  font-weight: 500;
+  max-width: 130px;
+}
+
+

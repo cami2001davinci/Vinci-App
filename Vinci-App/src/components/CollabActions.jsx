@@ -216,7 +216,7 @@ export default function CollabActions({ post, onPostUpdate }) {
                         onClick={handleCloseTeam}
                         disabled={loading}
                     >
-                        {loading ? "Cerrando..." : "🔒 CERRAR CONVOCATORIA"}
+                        {loading ? "Finalizando..." : "🔒 FINALIZAR BÚSQUEDA"}
                     </button>
                     <small className="d-block text-center text-muted mt-2" style={{ fontSize: '0.75rem' }}>
                         Al cerrar, se rechazarán las solicitudes pendientes.
@@ -226,7 +226,7 @@ export default function CollabActions({ post, onPostUpdate }) {
 
             {isCollabClosed && (
                 <div className="mt-2 text-success small fw-bold text-center bg-white p-2 rounded border border-success">
-                    ¡Convocatoria finalizada!
+                    ¡Búsqueda finalizada! Equipo completo.
                 </div>
             )}
         </div>

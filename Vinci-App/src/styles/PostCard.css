@@ -289,3 +289,242 @@
 
 @keyframes neoFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes neoSlideUp { from { transform: scale(0.9) translateY(20px); } to { transform: scale(1) translateY(0); } }
+
+/* =========================================================
+   RICH MEDIA Y SHOWCASES (POST CONTENT)
+   ========================================================= */
+
+/* === TÍTULO DE PROYECTOS (COLABORADORES) === */
+.neo-post-card__project-title {
+  font-family: 'Degular', sans-serif, Arial;
+  font-weight: 900;
+  font-size: 1.8rem;
+  text-transform: uppercase;
+  color: #000000;
+  font-style: normal; /* Garantiza que no tenga itálica */
+}
+
+/* Input para editar el título del proyecto */
+.neo-input--title {
+  font-weight: 900;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+}
+
+/* === CONTENEDOR GRID DINÁMICO (SHOWCASE MULTI-FOTOS) === */
+.neo-showcase-grid {
+  display: grid;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Si hay 1 foto: ocupa todo el ancho */
+.neo-showcase-grid--1 {
+  grid-template-columns: 1fr;
+}
+
+/* Si hay 2, 3 o 4 fotos: se divide en 2 columnas */
+.neo-showcase-grid--2,
+.neo-showcase-grid--4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* === SHOWCASE DE IMÁGENES === */
+.neo-image-showcase {
+  border: 2px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: #ffffff;
+  position: relative; /* Clave para el badge flotante */
+  height: 100%;
+}
+
+.neo-image-showcase img {
+  width: 100%;
+  border-bottom: 2px solid #000000;
+  
+  /* 👇 FIX 1: Cambiamos "cover" por "contain" para no recortar */
+  object-fit: contain; 
+  
+  /* 👇 FIX 2: Agregamos un fondo sutil por si la imagen no llena los costados */
+  background-color: #f3f4f6; 
+  
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.neo-image-showcase img:hover {
+  opacity: 0.9;
+}
+
+/* Alturas dinámicas según la grilla */
+.neo-showcase-grid--1 .neo-image-showcase img {
+  height: auto; 
+  max-height: 300px;
+}
+
+.neo-showcase-grid--2 .neo-image-showcase img,
+.neo-showcase-grid--4 .neo-image-showcase img {
+  height: 300px; 
+}
+
+/* === BADGE FLOTANTE DE LA FOTO === */
+.neo-image-floating-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background-color: #000000;
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 0.65rem;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 2px solid #ffffff;
+  text-transform: uppercase;
+  z-index: 10;
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+/* === FOOTER DE LA FOTO (Título y Botón) === */
+.neo-image-showcase-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+}
+
+.neo-image-title {
+  font-family: 'Degular', sans-serif, Arial;
+  font-weight: 900;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  font-style: italic;
+  color: #000000;
+  line-height: 1.2;
+}
+
+.neo-image-subtitle {
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.neo-image-btn {
+  background-color: #000000;
+  color: #ffffff;
+  border: 2px solid #000000;
+  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  margin-left: 1rem;
+}
+
+/* === TARJETAS DE LINKS Y PDFS === */
+.neo-attach-card {
+  display: flex;
+  border: 2px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  border-radius: 4px;
+  background-color: #ffffff;
+  text-decoration: none !important;
+  color: #000000 !important;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  min-height: 85px;
+}
+
+.neo-attach-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px #000000;
+}
+
+.neo-attach-icon {
+  width: 80px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2rem;
+  border-right: 2px solid #000000;
+}
+
+.neo-attach-body {
+  flex-grow: 1;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0; /* Vital para que el text-truncate funcione */
+}
+
+.neo-attach-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.neo-attach-type {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #9ca3af;
+  text-transform: uppercase;
+  font-style: italic;
+  letter-spacing: 1px;
+}
+
+.neo-attach-badge {
+  background-color: #000000;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: uppercase;
+}
+
+.neo-attach-title {
+  font-family: 'Degular', sans-serif, Arial;
+  font-weight: 900;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  font-style: italic;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.neo-attach-url {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+
+.neo-attach-action {
+  width: 50px;
+  flex-shrink: 0;
+  border-left: 2px solid #000000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+}

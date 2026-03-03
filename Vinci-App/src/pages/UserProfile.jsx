@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from '../api/axiosInstance';
-import Sidebar from '../components/Sidebar';
+import Sidebar from '../components/SideBar';
 import UserProfileHeader from '../components/UserProfileHeader';
 import UserProfileTabs from '../components/UserProfileTabs';
 import { useAuth } from '../context/AuthContext';
@@ -75,21 +75,20 @@ const UserProfilePage = () => {
       </p>
     );
 
+  // 👇 LIMPIEZA: Quitamos <Sidebar /> y el wrapper d-flex
   return (
-    <div className="d-flex">
-      <Sidebar />
-
-      <main className="flex-fill p-4 container">
-        <UserProfileHeader
-          user={userData}
-          isSelf={isSelf}
-          onStartChat={!isSelf ? handleStartChat : undefined}
-        />
+    <div className="container-fluid p-0"> 
+      <UserProfileHeader
+        user={userData}
+        isSelf={isSelf}
+        onStartChat={!isSelf ? handleStartChat : undefined}
+      />
+      <div className="mt-4">
         <UserProfileTabs
           posts={userData.posts || []}
           comments={userData.comments || []}
         />
-      </main>
+      </div>
     </div>
   );
 };
